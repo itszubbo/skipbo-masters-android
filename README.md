@@ -363,3 +363,36 @@ Op Android moet daarna in Android Studio een Gradle-sync en build worden uitgevo
 
 ### Validatiestatus
 De projectconfiguraties en bronbestanden zijn statisch gecontroleerd. De Firebase-configuratie, Google OAuth-client, Gradle-build en aanmelding op twee fysieke toestellen zijn project-eigenaarstaken en zijn niet vanuit deze bronbundel uitgevoerd. Er is geen APK bijgevoegd.
+
+## v15 — persoonlijk profiel en wedstrijdgeschiedenis
+
+### Android
+- Het community-profiel toont nu ook het winstpercentage op basis van de serverstatistieken.
+- Nieuw tabblad **Geschiedenis** met de twintig meest recente online uitslagen.
+- Elke kaart toont de tegenstander, datum, winst/verlies en de persoonlijke Elo-wijziging.
+- De speler kan de geschiedenis handmatig vernieuwen.
+
+### Backend en privacy
+- Nieuwe callable functie `getMyMatchHistory` vereist een ingelogde Firebase-speler.
+- De functie haalt alleen resultaatdocumenten op waarin de UID van de aangemelde speler als winnaar of verliezer voorkomt.
+- De server retourneert alleen de tegenstander, uitslag, datum en de voor de speler gesigneerde Elo-wijziging; geen UID's of gegevens van andere wedstrijden.
+- Firestore blijft directe clienttoegang tot `matchResults` blokkeren.
+- Twee samengestelde indexen toegevoegd voor het op datum ophalen van gewonnen en verloren wedstrijden.
+- Unit tests controleren dat de historie tot de eigen UID beperkt blijft, Elo-verlies negatief wordt getoond en ongeldige records worden genegeerd.
+
+### Firebase bijwerken
+Voer na het ophalen van deze versie vanuit de projectroot uit:
+```bash
+firebase deploy --only firestore:indexes,functions
+```
+De callable functie `getMyMatchHistory` en de twee Firestore-indexen moeten actief zijn voordat het tabblad Geschiedenis online gegevens kan laden.
+
+### Versie
+- Android `versionCode`: 15
+- Android `versionName`: 0.15.0
+
+### Nog niet in v15
+- Profielfoto uploaden is nog niet geïntegreerd.
+- De geschiedenis toont maximaal twintig recente online wedstrijden; lokale potjes tegen de computer worden niet naar Firebase opgeslagen.
+- Firebase deploy en fysieke toesteltests blijven nodig.
+
