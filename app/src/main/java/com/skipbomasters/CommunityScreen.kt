@@ -1265,7 +1265,7 @@ internal fun CommunityScreen(
                                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("#${index + 1}", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                                        Text("#${entry.rank}", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 13.sp)
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                             Text(
