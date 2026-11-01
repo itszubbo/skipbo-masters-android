@@ -333,3 +333,21 @@ export function nextDailyStreak(
   return dayDifference === 1 ? safeStreak + 1 : 1;
 }
 
+
+
+export type CardThemeId = "classic" | "emerald" | "royal_gold" | "midnight";
+
+const CARD_THEME_LEVELS: Readonly<Record<CardThemeId, number>> = {
+  classic: 1,
+  emerald: 2,
+  royal_gold: 4,
+  midnight: 7,
+};
+
+/** Check whether a player has reached the server-owned unlock level for a card back. */
+export function isCardThemeUnlocked(themeId: string, level: number): boolean {
+  if (!Number.isSafeInteger(level) || level < 1 || !(themeId in CARD_THEME_LEVELS)) {
+    return false;
+  }
+  return level >= CARD_THEME_LEVELS[themeId as CardThemeId];
+}
