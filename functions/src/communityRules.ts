@@ -204,3 +204,125 @@ export function buildTournamentBracket(
   return matches;
 }
 
+export type DailyMissionDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  metric: "matches" | "wins";
+  target: number;
+  xpReward: number;
+};
+
+export type DailyMissionProgress = DailyMissionDefinition & {
+  progress: number;
+  completed: boolean;
+};
+
+export type DailyMissionUpdate = {
+  matchesPlayed: number;
+  wins: number;
+  completedMissionIds: string[];
+  newlyCompleted: string[];
+  xpAwarded: number;
+};
+
+const DAILY_MISSIONS: readonly DailyMissionDefinition[] = [
+  {
+    id: "play_one_match",
+    title: "Even opwarmen",
+    description: "Speel één online wedstrijd.",
+    metric: "matches",
+    target: 1,
+    xpReward: 30,
+  },
+  {
+    id: "win_one_match",
+    title: "Pak de winst",
+    description: "Win één online wedstrijd.",
+    metric: "wins",
+    target: 1,
+    xpReward: 50,
+  },
+  {
+    id: "play_three_matches",
+    title: "Fanatieke speler",
+    description: "Speel drie online wedstrijden.",
+    metric: "matches",
+    target: 3,
+    xpReward: 70,
+  },
+];
+
+export function getDailyMissionProgress(
+  matchesPlayed: number,
+  wins: number,
+  completedIds: ReadonlySet<string> = new Set<string>()
+): DailyMissionProgress[] {
+  const safeMatches = Number.isSafeInteger(matchesPlayed) && matchesPlayed > 0 ? matchesPlayed : 0;
+  const safeWins = Number.isSafeInteger(wins) && wins > 0 ? wins : 0;
+  return DAILY_MISSIONS.map((mission) => {
+    const raw = mission.metric === "matches" ? safeMatches : safeWins;
+    const progress = Math.min(mission.target, raw);
+    return {
+      ...mission,
+      progress,
+      completed: completedIds.has(mission.id) || raw >= mission.target,
+    };
+  });
+}
+
+/** Apply one server-confirmed online result to today's missions. */
+export function updateDailyMissionProgress(
+  existing: { matchesPlayed?: unknown; wins?: unknown; completedMissionIds?: unknown },
+  playerWon: boolean
+): DailyMissionUpdate {
+  const previousMatches = Number(existing.matchesPlayed ?? 0);
+  const previousWins = Number(existing.wins ?? 0);
+  const matchesPlayed = Number.isSafeInteger(previousMatches) && previousMatches >= 0
+    ? previousMatches + 1
+    : 1;
+  const wins = (Number.isSafeInteger(previousWins) && previousWins >= 0 ? previousWins : 0)
+    + (playerWon ? 1 : 0);
+  const priorIds = Array.isArray(existing.completedMissionIds)
+    ? new Set(existing.completedMissionIds.filter((id): id is string => typeof id === "string"))
+    : new Set<string>();
+  const progress = getDailyMissionProgress(matchesPlayed, wins, priorIds);
+  const newlyCompleted = progress
+    .filter((mission) => mission.completed && !priorIds.has(mission.id))
+    .map((mission) => mission.id);
+  const completedMissionIds = [...new Set([...priorIds, ...newlyCompleted])];
+  const rewardById = new Map(DAILY_MISSIONS.map((mission) => [mission.id, mission.xpReward]));
+  const xpAwarded = newlyCompleted.reduce((total, id) => total + (rewardById.get(id) ?? 0), 0);
+
+  return { matchesPlayed, wins, completedMissionIds, newlyCompleted, xpAwarded };
+}
+
+export type LevelProgress = {
+  level: number;
+  xp: number;
+  xpIntoLevel: number;
+  xpForNextLevel: number;
+};
+
+export function getLevelProgress(totalXp: number): LevelProgress {
+  const xp = Number.isSafeInteger(totalXp) && totalXp > 0 ? totalXp : 0;
+  const level = Math.floor(xp / 500) + 1;
+  return {
+    level,
+    xp,
+    xpIntoLevel: xp % 500,
+    xpForNextLevel: 500,
+  };
+}
+
+export function nextDailyStreak(lastClaimedDate: string | null, today: string): number {
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(today)) throw new Error("Today must be an ISO UTC date.");
+  if (!lastClaimedDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(lastClaimedDate)) return 1;
+  if (lastClaimedDate === today) return 0;
+  const last = Date.parse(`${lastClaimedDate}T00:00:00.000Z`);
+  const current = Date.parse(`${today}T00:00:00.000Z`);
+  if (!Number.isFinite(last) || !Number.isFinite(current)) return 1;
+  const dayDifference = Math.round((current - last) / 86400000);
+  return dayDifference === 1 ? 1 + 0 : 1;
+}
+
