@@ -20,7 +20,8 @@ internal data class CommunityProfile(
     val xp: Int = 0,
     val level: Int = 1,
     val unlockedCosmetics: List<String> = emptyList(),
-    val activeCardTheme: String = "classic"
+    val activeCardTheme: String = "classic",
+    val activeBadgeId: String? = null
 )
 
 internal data class CommunityPlayer(
@@ -101,6 +102,19 @@ internal data class AchievementItem(
     val unlockedAtMs: Long?
 )
 
+internal data class SeasonProgress(
+    val seasonKey: String,
+    val title: String,
+    val matchesPlayed: Int,
+    val totalMatchesPlayed: Int,
+    val wins: Int,
+    val target: Int,
+    val xpReward: Int,
+    val rewardClaimed: Boolean,
+    val rewardBadgeId: String?,
+    val resetsAtUtc: String
+)
+
 internal data class TournamentParticipant(
     val uid: String,
     val displayName: String
@@ -157,6 +171,34 @@ internal object FirebaseCommunity {
                 },
                 onFailure = { callback(Result.failure(it)) }
             )
+        }
+    }
+
+    fun setActiveBadge(context: Context, badgeId: String?, callback: (Result<String?>) -> Unit) {
+        FirebaseRooms.callFunction(
+            context, "setActiveBadge", mapOf("badgeId" to (badgeId ?: ""))
+        ) { result ->
+            callback(result.mapCatching { data -> data.asMap()["activeBadgeId"] as? String })
+        }
+    }
+
+    fun loadSeasonProgress(context: Context, callback: (Result<SeasonProgress>) -> Unit) {
+        FirebaseRooms.callFunction(context, "getSeasonProgress", emptyMap()) { result ->
+            callback(result.mapCatching { data ->
+                val map = data.asMap()
+                SeasonProgress(
+                    seasonKey = map.string("seasonKey"),
+                    title = map.string("title", "Maandelijkse meesters"),
+                    matchesPlayed = map.int("matchesPlayed"),
+                    totalMatchesPlayed = map.int("totalMatchesPlayed"),
+                    wins = map.int("wins"),
+                    target = map.int("target", 10),
+                    xpReward = map.int("xpReward", 150),
+                    rewardClaimed = map["rewardClaimed"] as? Boolean ?: false,
+                    rewardBadgeId = map["rewardBadgeId"] as? String,
+                    resetsAtUtc = map.string("resetsAtUtc")
+                )
+            })
         }
     }
 
@@ -501,7 +543,8 @@ internal object FirebaseCommunity {
                 xp = me.int("xp"),
                 level = me.int("level", 1),
                 unlockedCosmetics = me.list("unlockedCosmetics").mapNotNull { it as? String },
-                activeCardTheme = me.string("activeCardTheme", "classic")
+                activeCardTheme = me.string("activeCardTheme", "classic"),
+                activeBadgeId = me["activeBadgeId"] as? String
             ),
             friends = root.list("friends").map { parsePlayer(it) },
             friendRequests = root.list("friendRequests").map { item ->
