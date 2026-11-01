@@ -27,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
@@ -1171,6 +1172,60 @@ internal fun CommunityScreen(
                     }
                 }
             }
+            8 -> {
+                val season = seasonProgress
+                Text("MAANDELIJKS SEIZOEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Text("Speel online wedstrijden om deze maand een exclusieve seizoensbadge en extra XP te verdienen.", color = CommunityMuted, fontSize = 11.sp)
+                OutlinedButton(
+                    onClick = { loadSeasonProgress() },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Seizoensvoortgang vernieuwen") }
+
+                if (season == null) {
+                    if (!loading) Text("Open dit tabblad om je seizoensvoortgang op te halen.", color = CommunityMuted, fontSize = 12.sp)
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp)
+                        ) {
+                            Text(season.title.uppercase(), color = CommunityGold, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                            Text("Seizoen ${season.seasonKey}", color = CommunityMuted, fontSize = 11.sp)
+                            Text(
+                                "${season.matchesPlayed} / ${season.target} online wedstrijden",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            LinearProgressIndicator(
+                                progress = (season.matchesPlayed.toFloat() / season.target.coerceAtLeast(1)).coerceIn(0f, 1f),
+                                modifier = Modifier.fillMaxWidth(),
+                                color = CommunityGold,
+                                trackColor = Color(0xFF315A49)
+                            )
+                            Text("${season.wins} overwinningen deze maand", color = CommunityMuted, fontSize = 11.sp)
+                            if (season.rewardClaimed && season.rewardBadgeId != null) {
+                                Text("🏅 SEIZOENSBADGE VRIJGESPEELD", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                Text("Je hebt ook ${season.xpReward} bonus-XP verdiend.", color = Color(0xFF9EE6B4), fontSize = 11.sp)
+                            } else {
+                                val remaining = (season.target - season.matchesPlayed).coerceAtLeast(0)
+                                Text("Nog ${remaining} wedstrijden tot je beloning.", color = CommunityMuted, fontSize = 11.sp)
+                                Text("Beloning: +${season.xpReward} XP en een exclusieve seizoensbadge.", color = CommunityGold, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text("Maandreset: 00:00 UTC op de eerste dag van de volgende maand.", color = CommunityMuted, fontSize = 9.sp)
+                        }
+                    }
+                    Text(
+                        "Iedere door de server bevestigde online wedstrijd telt mee, ook een verlies. Lokale potjes tegen de computer tellen niet mee. De beloning wordt automatisch en slechts één keer per maand toegekend.",
+                        color = CommunityMuted,
+                        fontSize = 10.sp
+                    )
+                }
+            }
             else -> {
                 val daily = dailyProgress
                 Text("DAGELIJKSE UITDAGINGEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
@@ -1300,3 +1355,14 @@ private fun tournamentMatchStatusLabel(status: String): String = when (status) {
     else -> status
 }
 
+
+
+private fun badgeName(id: String): String = when (id) {
+    "first_win" -> "Eerste overwinning"
+    "ten_wins" -> "Tien overwinningen"
+    "five_win_streak" -> "Vijf op rij"
+    "fifty_matches" -> "Vaste speler"
+    "hundred_matches" -> "Skip-Bo legende"
+    "master_rating" -> "Meester van Skip-Bo"
+    else -> id.replace('_', ' ').replaceFirstChar { it.uppercase() }
+}
