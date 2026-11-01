@@ -396,3 +396,37 @@ De callable functie `getMyMatchHistory` en de twee Firestore-indexen moeten acti
 - De geschiedenis toont maximaal twintig recente online wedstrijden; lokale potjes tegen de computer worden niet naar Firebase opgeslagen.
 - Firebase deploy en fysieke toesteltests blijven nodig.
 
+## v16 — prestaties, trofeeën en profielfoto
+
+### Prestaties en beloningen
+- Zes servergedefinieerde trofeeën: eerste overwinning, tien overwinningen, vijf overwinningen op rij, vijftig wedstrijden, honderd wedstrijden en 1.500 Elo-punten.
+- De backend berekent prestaties uitsluitend uit profielstatistieken na een door de server bevestigde online wedstrijduitslag.
+- De winstreeks wordt servermatig verhoogd bij winst en op nul gezet bij verlies.
+- Trofeedocumenten worden in dezelfde Firestore-transactie als de wedstrijduitslag aangemaakt en kunnen maar één keer per speler worden toegekend.
+- De winnende speler krijgt bij een nieuwe trofee een bericht in het online spel.
+- Nieuw tabblad **Prestaties** toont vrijgespeelde trofeeën, voortgang en datum van vrijspelen.
+- Nieuwe callable functie `getMyAchievements` geeft alleen de eigen prestaties terug.
+
+### Profielfoto
+- Android Photo Picker om een JPEG-, PNG- of WebP-foto te kiezen.
+- Upload naar `profilePhotos/{uid}/avatar`; de speler kan uitsluitend de eigen opslaglocatie wijzigen.
+- Cloud Storage-regels beperken bestandsgrootte tot 5 MB en toegestane MIME-types.
+- Callable functie `setAvatarPath` controleert de daadwerkelijke Storage-metadata voordat het profielpad wordt gepubliceerd.
+- Het communityprofiel laadt de eigen foto uit Firebase Storage; er worden geen brede galerijpermissies gevraagd.
+
+### Firebase uitrollen
+Voer vanuit de projectroot uit:
+```bash
+firebase deploy --only storage,functions
+```
+De nieuwe functie `getMyAchievements`, de avatar-validatie en de Storage-regels moeten actief zijn. Firestore-indexen wijzigen niet in v16.
+
+### Versie
+- Android `versionCode`: 16
+- Android `versionName`: 0.16.0
+
+### Nog te testen
+- Profielfoto uploaden en weergeven met een gekoppeld Firebase-project op fysieke Android-toestellen.
+- Twee spelers die tegelijk een laatste kaart spelen of resultaten opnieuw proberen te verzenden.
+- Firebase Emulator Suite- en end-to-endtests voor Storage Security Rules en het eenmalig toekennen van trofeeën.
+
