@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -384,12 +385,20 @@ internal fun CommunityScreen(
                             Image(
                                 bitmap = currentAvatar.asImageBitmap(),
                                 contentDescription = "Profielfoto",
-                                modifier = Modifier.size(68.dp).clip(CircleShape),
+                                modifier = Modifier.size(68.dp).clip(CircleShape).border(
+                                    width = if (data.profile.unlockedCosmetics.contains("emerald_frame")) 3.dp else 0.dp,
+                                    color = if (data.profile.unlockedCosmetics.contains("emerald_frame")) CommunityGold else Color.Transparent,
+                                    shape = CircleShape
+                                ),
                                 contentScale = ContentScale.Crop
                             )
                         } else {
                             Card(
-                                modifier = Modifier.size(68.dp),
+                                modifier = Modifier.size(68.dp).border(
+                                    width = if (data.profile.unlockedCosmetics.contains("emerald_frame")) 3.dp else 0.dp,
+                                    color = if (data.profile.unlockedCosmetics.contains("emerald_frame")) CommunityGold else Color.Transparent,
+                                    shape = CircleShape
+                                ),
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF245A43)),
                                 shape = CircleShape
                             ) {
