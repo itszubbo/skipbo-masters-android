@@ -226,3 +226,45 @@ test("card themes unlock only at their required server-side level", () => {
   assert.equal(isCardThemeUnlocked("unknown", 99), false);
   assert.equal(isCardThemeUnlocked("midnight", -1), false);
 });
+
+
+test("season progress advances for wins and losses and awards the reward only once", () => {
+  const { updateSeasonProgress } = require("../lib/communityRules.js");
+  let progress = {};
+  let totalXp = 0;
+  for (let i = 0; i < 9; i += 1) {
+    const next = updateSeasonProgress(progress, i % 2 === 0);
+    assert.equal(next.matchesPlayed, i + 1);
+    assert.equal(next.rewardUnlocked, false);
+    assert.equal(next.xpAwarded, 0);
+    progress = next;
+  }
+  const tenth = updateSeasonProgress(progress, true);
+  assert.equal(tenth.matchesPlayed, 10);
+  assert.equal(tenth.rewardUnlocked, true);
+  assert.equal(tenth.rewardClaimed, true);
+  assert.equal(tenth.xpAwarded, 150);
+  totalXp += tenth.xpAwarded;
+  const eleventh = updateSeasonProgress(tenth, false);
+  assert.equal(eleventh.rewardUnlocked, false);
+  assert.equal(eleventh.xpAwarded, 0);
+  assert.equal(totalXp, 150);
+});
+
+test("season progress sanitizes invalid counters and validates reward configuration", () => {
+  const { updateSeasonProgress } = require("../lib/communityRules.js");
+  const clean = updateSeasonProgress({ matchesPlayed: -8, wins: Number.NaN }, false);
+  assert.equal(clean.matchesPlayed, 1);
+  assert.equal(clean.wins, 0);
+  assert.throws(() => updateSeasonProgress({}, true, 0, 150));
+  assert.throws(() => updateSeasonProgress({}, true, 10, -1));
+});
+
+test("only safe achievement ids are accepted for profile badge selection", () => {
+  const { isValidAchievementBadgeId } = require("../lib/communityRules.js");
+  assert.equal(isValidAchievementBadgeId("first_win"), true);
+  assert.equal(isValidAchievementBadgeId("master_rating"), true);
+  assert.equal(isValidAchievementBadgeId("../first_win"), false);
+  assert.equal(isValidAchievementBadgeId(""), false);
+  assert.equal(isValidAchievementBadgeId("A".repeat(41)), false);
+});
