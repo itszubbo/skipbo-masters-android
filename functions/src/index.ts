@@ -1064,29 +1064,48 @@ export const getSeasonProgress = onCall(async (request) => {
   const profileRef = db.doc(`profiles/${uid}`);
   const seasonRef = profileRef.collection("seasons").doc(seasonKey);
   const seasonBoard = db.collection("seasonLeaderboards").doc(seasonKey).collection("players");
-  const [profileSnap, seasonSnap, leaderboardSnap, mySeasonBoardSnap] = await Promise.all([
+  const [profileSnap, seasonSnap, mySeasonBoardSnap] = await Promise.all([
     profileRef.get(),
     seasonRef.get(),
-    seasonBoard.orderBy("rankScore", "desc").limit(25).get(),
     seasonBoard.doc(uid).get(),
   ]);
   if (!profileSnap.exists) {
     throw new HttpsError("failed-precondition", "Je spelersprofiel is niet beschikbaar.");
   }
   const season = seasonSnap.data() ?? {};
-  const matchesPlayed = Math.max(0, Number(season.matchesPlayed ?? 0));
+  const rawMatches = Number(season.matchesPlayed ?? 0);
+  const totalMatchesPlayed = Number.isSafeInteger(rawMatches) && rawMatches > 0 ? rawMatches : 0;
+  const rawWins = Number(season.wins ?? 0);
+  const totalWins = Number.isSafeInteger(rawWins) && rawWins >= 0 ? Math.min(rawWins, totalMatchesPlayed) : 0;
   const target = 10;
   const badgeId = `season_badge_${seasonKey.replace("-", "")}`;
   const profile = profileSnap.data() ?? {};
   const cosmetics = Array.isArray(profile.unlockedCosmetics) ? profile.unlockedCosmetics : [];
 
-  let myRank: number | null = null;
+  // Backfill this player's pre-v23 season results the first time they open
+  // the tab, without reading or modifying another player's private profile.
+  let myScore: number | null = null;
   if (mySeasonBoardSnap.exists) {
-    const myScore = Number(mySeasonBoardSnap.get("rankScore"));
-    if (Number.isSafeInteger(myScore) && myScore >= 0) {
-      const ahead = await seasonBoard.where("rankScore", ">", myScore).count().get();
-      myRank = ahead.data().count + 1;
-    }
+    const storedScore = Number(mySeasonBoardSnap.get("rankScore"));
+    if (Number.isSafeInteger(storedScore) && storedScore >= 0) myScore = storedScore;
+  } else if (totalMatchesPlayed > 0) {
+    myScore = seasonRankScore(totalWins, totalMatchesPlayed);
+    await seasonBoard.doc(uid).set({
+      uid,
+      displayName: cleanDisplayName(profile.displayName),
+      wins: totalWins,
+      matchesPlayed: totalMatchesPlayed,
+      rankScore: myScore,
+      activeBadgeId: typeof profile.activeBadgeId === "string" ? profile.activeBadgeId : null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
+  const leaderboardSnap = await seasonBoard.orderBy("rankScore", "desc").limit(25).get();
+  let myRank: number | null = null;
+  if (myScore !== null) {
+    const ahead = await seasonBoard.where("rankScore", ">", myScore).count().get();
+    myRank = ahead.data().count + 1;
   }
 
   let previousRankScore: number | null = null;
@@ -1108,9 +1127,9 @@ export const getSeasonProgress = onCall(async (request) => {
   return {
     seasonKey,
     title: "Maandelijkse meesters",
-    matchesPlayed: Math.min(matchesPlayed, target),
-    totalMatchesPlayed: matchesPlayed,
-    wins: Math.max(0, Number(season.wins ?? 0)),
+    matchesPlayed: Math.min(totalMatchesPlayed, target),
+    totalMatchesPlayed,
+    wins: totalWins,
     target,
     xpReward: 150,
     rewardClaimed: season.rewardClaimed === true,
