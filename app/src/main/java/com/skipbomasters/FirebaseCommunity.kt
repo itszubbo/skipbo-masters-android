@@ -78,7 +78,8 @@ internal data class TournamentSummary(
     val status: String,
     val participantCount: Int,
     val inviteCode: String,
-    val participants: List<TournamentParticipant>
+    val participants: List<TournamentParticipant>,
+    val winnerName: String? = null
 )
 
 internal data class TournamentMatchItem(
@@ -441,7 +442,8 @@ internal object FirebaseCommunity {
             status = map.string("status", "OPEN"),
             participantCount = map.int("participantCount", participants.size),
             inviteCode = map.string("inviteCode"),
-            participants = participants
+            participants = participants,
+            winnerName = map["winnerName"] as? String
         )
     }
 
