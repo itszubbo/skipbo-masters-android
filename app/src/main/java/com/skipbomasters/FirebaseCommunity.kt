@@ -104,6 +104,7 @@ internal data class AchievementItem(
 
 internal data class SeasonLeaderboardEntry(
     val uid: String,
+    val rank: Int,
     val displayName: String,
     val wins: Int,
     val matchesPlayed: Int,
@@ -212,6 +213,7 @@ internal object FirebaseCommunity {
                         val entry = item.asMap()
                         SeasonLeaderboardEntry(
                             uid = entry.string("uid"),
+                            rank = entry.int("rank", 0),
                             displayName = entry.string("displayName", "Skip-Bo speler"),
                             wins = entry.int("wins"),
                             matchesPlayed = entry.int("matchesPlayed"),
