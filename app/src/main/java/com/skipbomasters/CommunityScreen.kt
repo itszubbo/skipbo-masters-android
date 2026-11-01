@@ -1211,6 +1211,27 @@ internal fun CommunityScreen(
                             if (season.rewardClaimed && season.rewardBadgeId != null) {
                                 Text("🏅 SEIZOENSBADGE VRIJGESPEELD", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 12.sp)
                                 Text("Je hebt ook ${season.xpReward} bonus-XP verdiend.", color = Color(0xFF9EE6B4), fontSize = 11.sp)
+                                if (overview?.profile?.activeBadgeId == season.rewardBadgeId) {
+                                    Text("Seizoensbadge is actief op je profiel.", color = CommunityGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    OutlinedButton(
+                                        enabled = !loading,
+                                        onClick = {
+                                            loading = true
+                                            FirebaseCommunity.setActiveBadge(context, season.rewardBadgeId) { result ->
+                                                loading = false
+                                                result.onSuccess { selected ->
+                                                    overview = overview?.let { current ->
+                                                        current.copy(profile = current.profile.copy(activeBadgeId = selected))
+                                                    }
+                                                    notice = "Je seizoensbadge staat nu op je profiel."
+                                                }.onFailure {
+                                                    error = it.localizedMessage ?: "Seizoensbadge kon niet worden uitgerust."
+                                                }
+                                            }
+                                        }
+                                    ) { Text("Seizoensbadge uitrusten") }
+                                }
                             } else {
                                 val remaining = (season.target - season.matchesPlayed).coerceAtLeast(0)
                                 Text("Nog ${remaining} wedstrijden tot je beloning.", color = CommunityMuted, fontSize = 11.sp)
@@ -1357,7 +1378,9 @@ private fun tournamentMatchStatusLabel(status: String): String = when (status) {
 
 
 
-private fun badgeName(id: String): String = when (id) {
+private fun badgeName(id: String): String {
+    if (id.startsWith("season_badge_")) return "Seizoenskampioen ${id.removePrefix("season_badge_")}"
+    return when (id) {
     "first_win" -> "Eerste overwinning"
     "ten_wins" -> "Tien overwinningen"
     "five_win_streak" -> "Vijf op rij"
@@ -1365,4 +1388,5 @@ private fun badgeName(id: String): String = when (id) {
     "hundred_matches" -> "Skip-Bo legende"
     "master_rating" -> "Meester van Skip-Bo"
     else -> id.replace('_', ' ').replaceFirstChar { it.uppercase() }
+    }
 }
