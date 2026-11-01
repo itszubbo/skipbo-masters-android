@@ -1005,20 +1005,27 @@ export const setActiveCardTheme = onCall(async (request) => {
 export const setActiveBadge = onCall(async (request) => {
   const uid = requireUid(request);
   const badgeId = String(request.data?.badgeId ?? "");
-  if (badgeId && !isValidAchievementBadgeId(badgeId)) {
+  const isSeasonBadgeId = /^season_badge_\\d{6}$/.test(badgeId);
+  if (badgeId && !isValidAchievementBadgeId(badgeId) && !isSeasonBadgeId) {
     throw new HttpsError("invalid-argument", "Ongeldige badge geselecteerd.");
   }
   const profileRef = db.doc(`profiles/${uid}`);
-  const badgeRef = badgeId ? profileRef.collection("achievements").doc(badgeId) : null;
+  const badgeRef = badgeId && !isSeasonBadgeId
+    ? profileRef.collection("achievements").doc(badgeId)
+    : null;
 
   return db.runTransaction(async (transaction) => {
     const profileSnap = await transaction.get(profileRef);
     if (!profileSnap.exists) {
       throw new HttpsError("failed-precondition", "Je spelersprofiel is niet beschikbaar.");
     }
+    const profile = profileSnap.data() ?? {};
     const badgeSnap = badgeRef ? await transaction.get(badgeRef) : null;
-    if (badgeId && !badgeSnap?.exists) {
-      throw new HttpsError("failed-precondition", "Deze trofee is nog niet vrijgespeeld.");
+    const ownsSeasonBadge = isSeasonBadgeId
+      && Array.isArray(profile.unlockedCosmetics)
+      && profile.unlockedCosmetics.includes(badgeId);
+    if (badgeId && !ownsSeasonBadge && !badgeSnap?.exists) {
+      throw new HttpsError("failed-precondition", "Deze badge is nog niet vrijgespeeld.");
     }
     transaction.update(profileRef, {
       activeBadgeId: badgeId || null,
