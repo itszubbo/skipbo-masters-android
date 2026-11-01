@@ -315,7 +315,11 @@ export function getLevelProgress(totalXp: number): LevelProgress {
   };
 }
 
-export function nextDailyStreak(lastClaimedDate: string | null, today: string): number {
+export function nextDailyStreak(
+  lastClaimedDate: string | null,
+  today: string,
+  previousStreak: number
+): number {
   if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(today)) throw new Error("Today must be an ISO UTC date.");
   if (!lastClaimedDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(lastClaimedDate)) return 1;
   if (lastClaimedDate === today) return 0;
@@ -323,6 +327,9 @@ export function nextDailyStreak(lastClaimedDate: string | null, today: string): 
   const current = Date.parse(`${today}T00:00:00.000Z`);
   if (!Number.isFinite(last) || !Number.isFinite(current)) return 1;
   const dayDifference = Math.round((current - last) / 86400000);
-  return dayDifference === 1 ? 1 + 0 : 1;
+  const safeStreak = Number.isSafeInteger(previousStreak) && previousStreak > 0
+    ? previousStreak
+    : 0;
+  return dayDifference === 1 ? safeStreak + 1 : 1;
 }
 
