@@ -43,7 +43,8 @@ import com.google.firebase.firestore.ListenerRegistration
 fun OnlineLobbyScreen(
     onBack: () -> Unit,
     initialRoomCode: String? = null,
-    onInitialRoomHandled: () -> Unit = {}
+    onInitialRoomHandled: () -> Unit = {},
+    activeCardTheme: String = "classic"
 ) {
     val context = LocalContext.current
     var savedRoomSession by remember { mutableStateOf(FirebaseRooms.lastRoomSession(context)) }
@@ -239,7 +240,8 @@ fun OnlineLobbyScreen(
                 else -> null
             },
             onOnlinePlay = { source, index -> submitPlay(source, index) },
-            onOnlineDiscard = { handIndex, pileIndex -> submitDiscard(handIndex, pileIndex) }
+            onOnlineDiscard = { handIndex, pileIndex -> submitDiscard(handIndex, pileIndex) },
+            activeCardTheme = activeCardTheme
         )
         return
     }
