@@ -56,6 +56,7 @@ fun OnlineLobbyScreen(
     var savingState by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
+    var achievementNotice by remember { mutableStateOf("") }
     var syncError by remember { mutableStateOf("") }
     var stateLoaded by remember { mutableStateOf(false) }
     var privateStateLoaded by remember { mutableStateOf(false) }
@@ -135,6 +136,9 @@ fun OnlineLobbyScreen(
             stateLoaded = true
             privateStateLoaded = true
             syncError = ""
+            if (commit.unlockedAchievements.isNotEmpty()) {
+                achievementNotice = "Trofee vrijgespeeld! Bekijk je prestaties in de community."
+            }
             if (openMatch) showMatch = true
         }.onFailure {
             syncError = it.localizedMessage ?: "De spelactie kon niet worden opgeslagen."
@@ -231,6 +235,7 @@ fun OnlineLobbyScreen(
             syncMessage = when {
                 savingState -> "Server controleert de zet…"
                 syncError.isNotBlank() -> syncError
+                achievementNotice.isNotBlank() -> achievementNotice
                 else -> null
             },
             onOnlinePlay = { source, index -> submitPlay(source, index) },
