@@ -545,3 +545,23 @@ De server gebruikt UTC als vaste daggrens (00:00 UTC). De dagreset valt daardoor
 - Moeilijk bewaart Skip-Bo-jokers waar mogelijk, geeft voorrang aan natuurlijke kaarten en herkent aflegzetten die meteen een volgende kaart vrijspelen.
 - De computer kiest bij iedere stap opnieuw uit alle direct speelbare kaarten en probeert een bouwstapel van twaalf af te ronden.
 - Android-versie verhoogd naar 0.20.0 (versionCode 20).
+
+
+## v21 — profielvoortgang en vrij te spelen kaartstijlen
+
+- Vier kaartachterkanten: Klassiek, Smaragd, Koninklijk goud en Middernacht.
+- Klassiek is direct beschikbaar; Smaragd komt vrij op niveau 2, Koninklijk goud op niveau 4 en Middernacht op niveau 7.
+- Het tabblad **Kaartstijl** toont previews, ontgrendelingseisen en de actieve stijl.
+- De actieve kaartstijl wordt op het spelersprofiel opgeslagen en blijft beschikbaar bij account-herstel op een ander toestel.
+- De stijl wordt toegepast op de trekstapel in zowel lokale als online wedstrijden.
+- De Cloud Function `setActiveCardTheme` controleert server-side het spelersniveau voordat een stijl wordt uitgerust.
+- Pure backendtests controleren de niveaugrenzen en blokkeren onbekende of ongeldige stijlen.
+- Android-versie verhoogd naar 0.21.0 (versionCode 21).
+
+### Firebase bijwerken voor v21
+
+Voer vanuit de projectroot uit:
+```bash
+firebase deploy --only functions
+```
+De nieuwe callable functie `setActiveCardTheme` moet zijn uitgerold voordat spelers een kaartstijl kunnen wijzigen. De bestaande Firestore-regels en indexen hoeven niet te worden aangepast.
