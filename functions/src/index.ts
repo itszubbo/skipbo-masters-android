@@ -1283,7 +1283,8 @@ export const getTournamentDetails = onCall(async (request) => {
       status: String(data.status ?? "WAITING"),
       winnerName: winnerUid ? cleanDisplayName(participants[winnerUid]?.displayName) : null,
       roomCode: data.status === "PLAYING" ? String(data.roomCode ?? "") : null,
-      canStart: data.status === "WAITING" && player1Uid !== null && player2Uid !== null
+      canOpen: (data.status === "WAITING" || data.status === "PLAYING")
+        && player1Uid !== null && player2Uid !== null
         && (player1Uid === uid || player2Uid === uid),
     };
   }).sort((a, b) => a.round - b.round || a.slot - b.slot);
