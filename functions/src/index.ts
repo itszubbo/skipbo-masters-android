@@ -930,7 +930,7 @@ export const setAvatarPath = onCall(async (request) => {
   }
 
   const file = getStorage().bucket().file(expectedPath);
-  let metadata: { size?: string; contentType?: string };
+  let metadata: { size?: string | number; contentType?: string };
   try {
     const [fileMetadata] = await file.getMetadata();
     metadata = fileMetadata;
