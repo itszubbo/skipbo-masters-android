@@ -213,3 +213,16 @@ test("daily login streak increments only on consecutive UTC dates", () => {
   assert.throws(() => nextDailyStreak("2026-11-01", "today", 1));
 });
 
+
+
+test("card themes unlock only at their required server-side level", () => {
+  const { isCardThemeUnlocked } = require("../lib/communityRules.js");
+  assert.equal(isCardThemeUnlocked("classic", 1), true);
+  assert.equal(isCardThemeUnlocked("emerald", 1), false);
+  assert.equal(isCardThemeUnlocked("emerald", 2), true);
+  assert.equal(isCardThemeUnlocked("royal_gold", 3), false);
+  assert.equal(isCardThemeUnlocked("royal_gold", 4), true);
+  assert.equal(isCardThemeUnlocked("midnight", 7), true);
+  assert.equal(isCardThemeUnlocked("unknown", 99), false);
+  assert.equal(isCardThemeUnlocked("midnight", -1), false);
+});
