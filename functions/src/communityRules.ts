@@ -160,3 +160,47 @@ export function getAchievementProgress(
   });
 }
 
+export type TournamentBracketMatch = {
+  round: number;
+  slot: number;
+  playerUids: string[];
+};
+
+/**
+ * Create a single-elimination bracket for four or eight distinct players.
+ * The caller chooses/shuffles the seed order before calling this helper.
+ */
+export function buildTournamentBracket(
+  playerUids: readonly string[]
+): TournamentBracketMatch[] {
+  if (
+    (playerUids.length !== 4 && playerUids.length !== 8) ||
+    playerUids.some((uid) => typeof uid !== "string" || uid.trim().length === 0) ||
+    new Set(playerUids).size !== playerUids.length
+  ) {
+    throw new Error("A tournament requires four or eight distinct player UIDs.");
+  }
+
+  const matches: TournamentBracketMatch[] = [];
+  let matchCount = playerUids.length / 2;
+  let round = 1;
+
+  for (let slot = 0; slot < matchCount; slot += 1) {
+    matches.push({
+      round,
+      slot,
+      playerUids: [playerUids[slot * 2], playerUids[slot * 2 + 1]],
+    });
+  }
+
+  while (matchCount > 1) {
+    matchCount /= 2;
+    round += 1;
+    for (let slot = 0; slot < matchCount; slot += 1) {
+      matches.push({ round, slot, playerUids: [] });
+    }
+  }
+
+  return matches;
+}
+
