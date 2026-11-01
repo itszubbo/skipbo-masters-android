@@ -565,3 +565,43 @@ Voer vanuit de projectroot uit:
 firebase deploy --only functions
 ```
 De nieuwe callable functie `setActiveCardTheme` moet zijn uitgerold voordat spelers een kaartstijl kunnen wijzigen. De bestaande Firestore-regels en indexen hoeven niet te worden aangepast.
+
+
+## v22 — seizoensbeloningen, profielbadges en gouden kaarteffecten
+
+### Profielbadges
+- Vrijgespeelde online trofeeën kunnen als persoonlijke profielbadge worden uitgerust.
+- De badgekeuze wordt op het eigen Firebase-profiel opgeslagen.
+- Alleen een achievement-document dat door de server is toegekend, kan als badge worden ingesteld.
+- Je kunt de actieve badge ook weer verwijderen.
+
+### Maandelijks seizoen
+- Nieuw communitytabblad **Seizoen** met de voortgang van de huidige UTC-maand.
+- Iedere door de server bevestigde online wedstrijd telt mee, winst of verlies.
+- Na tien wedstrijden in dezelfde kalendermaand wordt automatisch één seizoensbeloning toegekend: 150 XP en een unieke maandbadge (bijvoorbeeld `season_badge_202611`).
+- De mijlpaal en beloning worden in dezelfde Firestore-transactie verwerkt als de online uitslag. Opnieuw verstuurde uitslagen kunnen geen dubbele seizoensbeloning uitkeren.
+- Lokale wedstrijden tegen de computer tellen niet mee. De voortgang start op de eerste dag van iedere nieuwe UTC-maand opnieuw.
+
+### Koninklijk-gouden kaarteffect
+- De stijl **Koninklijk goud** geeft nu een pulserende gouden gloed en rand aan de handkaarten.
+- De instelling werkt in lokale en online spellen.
+
+### Backend en uitrol
+Nieuwe callable functies:
+- `getSeasonProgress` — leest uitsluitend de seizoensvoortgang van de aangemelde speler.
+- `setActiveBadge` — rust een reeds door de server toegekende trofee uit of verwijdert de actieve badge.
+
+Werk de Cloud Functions bij vanuit de projectroot:
+```bash
+firebase deploy --only functions
+```
+Er zijn geen nieuwe samengestelde Firestore-indexen of Storage-regels nodig.
+
+### Versie
+- Android `versionCode`: 22
+- Android `versionName`: 0.22.0
+
+### Validatie
+- Unit tests controleren seizoensvoortgang, eenmalige XP-beloning, ongeldige tellers en badge-ID-validatie.
+- De Android-interface, Cloud Functions en APK worden in de GitHub Actions-workflow gebouwd/gecontroleerd.
+- Emulator-, Firebase-project- en fysieke toesteltests moeten nog door de projecteigenaar worden uitgevoerd.
