@@ -15,11 +15,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -661,13 +657,20 @@ private fun PlayingCard(
 ) {
     val bg = if (card.joker) Color(0xFFFFD34E) else Color.White
     val fg = if (card.joker) Color(0xFFB51F2A) else when (card.value % 3) { 0 -> Color(0xFF174C35); 1 -> Color(0xFFB51F2A); else -> Color(0xFF174C35) }
-    val goldGlow by rememberInfiniteTransition(label = "gold-card-glow").animateFloat(
-        initialValue = 5f,
-        targetValue = 11f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100),
-            repeatMode = RepeatMode.Reverse
-        ),
+    var goldGlowActive by remember { mutableStateOf(false) }
+    LaunchedEffect(goldenTheme) {
+        if (goldenTheme) {
+            while (goldenTheme) {
+                goldGlowActive = !goldGlowActive
+                delay(700)
+            }
+        } else {
+            goldGlowActive = false
+        }
+    }
+    val goldGlow by animateFloatAsState(
+        targetValue = if (goldenTheme && goldGlowActive) 11f else 5f,
+        animationSpec = tween(700),
         label = "gold-card-glow-level"
     )
     val interactionSource = remember { MutableInteractionSource() }
