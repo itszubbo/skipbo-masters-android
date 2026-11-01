@@ -1001,6 +1001,67 @@ export const setActiveCardTheme = onCall(async (request) => {
   });
 });
 
+/** Equip a badge only when its matching server-awarded achievement exists. */
+export const setActiveBadge = onCall(async (request) => {
+  const uid = requireUid(request);
+  const badgeId = String(request.data?.badgeId ?? "");
+  if (badgeId && !isValidAchievementBadgeId(badgeId)) {
+    throw new HttpsError("invalid-argument", "Ongeldige badge geselecteerd.");
+  }
+  const profileRef = db.doc(`profiles/${uid}`);
+  const badgeRef = badgeId ? profileRef.collection("achievements").doc(badgeId) : null;
+
+  return db.runTransaction(async (transaction) => {
+    const profileSnap = await transaction.get(profileRef);
+    if (!profileSnap.exists) {
+      throw new HttpsError("failed-precondition", "Je spelersprofiel is niet beschikbaar.");
+    }
+    const badgeSnap = badgeRef ? await transaction.get(badgeRef) : null;
+    if (badgeId && !badgeSnap?.exists) {
+      throw new HttpsError("failed-precondition", "Deze trofee is nog niet vrijgespeeld.");
+    }
+    transaction.update(profileRef, {
+      activeBadgeId: badgeId || null,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { activeBadgeId: badgeId || null };
+  });
+});
+
+/** Return this month's UTC season track and one-time reward state. */
+export const getSeasonProgress = onCall(async (request) => {
+  const uid = requireUid(request);
+  const seasonKey = new Date().toISOString().slice(0, 7);
+  const profileRef = db.doc(`profiles/${uid}`);
+  const seasonRef = profileRef.collection("seasons").doc(seasonKey);
+  const [profileSnap, seasonSnap] = await Promise.all([profileRef.get(), seasonRef.get()]);
+  if (!profileSnap.exists) {
+    throw new HttpsError("failed-precondition", "Je spelersprofiel is niet beschikbaar.");
+  }
+  const season = seasonSnap.data() ?? {};
+  const matchesPlayed = Math.max(0, Number(season.matchesPlayed ?? 0));
+  const target = 10;
+  const badgeId = `season_badge_${seasonKey.replace("-", "")}`;
+  const profile = profileSnap.data() ?? {};
+  const cosmetics = Array.isArray(profile.unlockedCosmetics) ? profile.unlockedCosmetics : [];
+  return {
+    seasonKey,
+    title: "Maandelijkse meesters",
+    matchesPlayed: Math.min(matchesPlayed, target),
+    totalMatchesPlayed: matchesPlayed,
+    wins: Math.max(0, Number(season.wins ?? 0)),
+    target,
+    xpReward: 150,
+    rewardClaimed: season.rewardClaimed === true,
+    rewardBadgeId: cosmetics.includes(badgeId) ? badgeId : null,
+    resetsAtUtc: new Date(Date.UTC(
+      Number(seasonKey.slice(0, 4)),
+      Number(seasonKey.slice(5, 7)),
+      1
+    )).toISOString(),
+  };
+});
+
 export const getLeaderboardPage = onCall(async (request) => {
   requireUid(request);
   const requestedSize = request.data?.pageSize;
