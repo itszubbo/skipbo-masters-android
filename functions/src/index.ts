@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
+import { getStorage } from "firebase-admin/storage";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { FieldValue, getFirestore, type DocumentData, type DocumentReference, type DocumentSnapshot } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -915,5 +916,53 @@ export const getMyAchievements = onCall(async (request) => {
       rating: Number(profile.rating ?? 1000),
     },
   };
+});
+
+/** Validate an uploaded avatar in the caller's own Storage folder, then publish its path. */
+export const setAvatarPath = onCall(async (request) => {
+  const uid = requireUid(request);
+  const expectedPath = `profilePhotos/${uid}/avatar`;
+  const suppliedPath = String(request.data?.storagePath ?? "");
+
+  if (suppliedPath !== expectedPath) {
+    throw new HttpsError("permission-denied", "Je kunt alleen je eigen profielfoto instellen.");
+  }
+
+  const file = getStorage().bucket().file(expectedPath);
+  let metadata: { size?: string; contentType?: string };
+  try {
+    const [fileMetadata] = await file.getMetadata();
+    metadata = fileMetadata;
+  } catch {
+    throw new HttpsError("failed-precondition", "Upload eerst een profielfoto.");
+  }
+
+  const contentType = String(metadata.contentType ?? "");
+  const size = Number(metadata.size ?? 0);
+  if (!/^image\/(jpeg|png|webp)$/.test(contentType) || !Number.isSafeInteger(size) || size <= 0 || size > 5 * 1024 * 1024) {
+    throw new HttpsError("invalid-argument", "De profielfoto moet JPEG, PNG of WebP zijn en maximaal 5 MB groot zijn.");
+  }
+
+  const profileRef = db.doc(`profiles/${uid}`);
+  const publicRef = db.doc(`publicProfiles/${uid}`);
+  await db.runTransaction(async (transaction) => {
+    const [profileSnap, publicSnap] = await Promise.all([
+      transaction.get(profileRef),
+      transaction.get(publicRef),
+    ]);
+    if (!profileSnap.exists || !publicSnap.exists) {
+      throw new HttpsError("failed-precondition", "Je spelersprofiel is nog niet aangemaakt.");
+    }
+    transaction.update(profileRef, {
+      avatarPath: expectedPath,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(publicRef, {
+      avatarPath: expectedPath,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { avatarPath: expectedPath };
 });
 
