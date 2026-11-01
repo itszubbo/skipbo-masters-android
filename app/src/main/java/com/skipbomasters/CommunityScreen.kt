@@ -107,6 +107,8 @@ internal fun CommunityScreen(
     var tournamentsLoaded by remember { mutableStateOf(false) }
     var dailyProgress by remember { mutableStateOf<DailyProgress?>(null) }
     var dailyLoaded by remember { mutableStateOf(false) }
+    var seasonProgress by remember { mutableStateOf<SeasonProgress?>(null) }
+    var seasonLoaded by remember { mutableStateOf(false) }
     var tournamentTitle by remember { mutableStateOf("Mijn vriendentoernooi") }
     var tournamentCapacity by remember { mutableIntStateOf(4) }
     var tournamentCodeInput by remember { mutableStateOf("") }
@@ -207,6 +209,21 @@ internal fun CommunityScreen(
             }.onFailure {
                 dailyLoaded = false
                 error = it.localizedMessage ?: "Dagelijkse uitdagingen konden niet worden geladen."
+            }
+        }
+    }
+
+    fun loadSeasonProgress() {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadSeasonProgress(context) { result ->
+            loading = false
+            result.onSuccess {
+                seasonProgress = it
+                seasonLoaded = true
+            }.onFailure {
+                seasonLoaded = false
+                error = it.localizedMessage ?: "Seizoensvoortgang kon niet worden geladen."
             }
         }
     }
@@ -384,6 +401,7 @@ internal fun CommunityScreen(
                 if (selectedTab == 2) loadLeaderboard(reset = true)
                 if (selectedTab == 3) loadMatchHistory()
                 if (selectedTab == 4) loadAchievements()
+                if (selectedTab == 8) loadSeasonProgress()
             }) { Text("Vernieuwen", color = CommunityMuted) }
         }
 
@@ -595,13 +613,14 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien", "Dagelijks", "Kaartstijl").forEachIndexed { index, label ->
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien", "Dagelijks", "Kaartstijl", "Seizoen").forEachIndexed { index, label ->
                 Tab(selected = selectedTab == index, onClick = {
                     selectedTab = index
                     if (index == 3 && !historyLoaded) loadMatchHistory()
                     if (index == 4 && !achievementsLoaded) loadAchievements()
                     if (index == 5 && !tournamentsLoaded) loadTournaments()
                     if (index == 6 && !dailyLoaded) loadDailyProgress()
+                    if (index == 8 && !seasonLoaded) loadSeasonProgress()
                 }, text = {
                     Text(label, fontSize = 7.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
