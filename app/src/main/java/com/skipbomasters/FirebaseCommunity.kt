@@ -1,6 +1,12 @@
 package com.skipbomasters
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
 
 internal data class CommunityProfile(
     val uid: String,
@@ -9,7 +15,8 @@ internal data class CommunityProfile(
     val rating: Int,
     val wins: Int,
     val losses: Int,
-    val matchesPlayed: Int
+    val matchesPlayed: Int,
+    val avatarPath: String? = null
 )
 
 internal data class CommunityPlayer(
@@ -136,6 +143,63 @@ internal object FirebaseCommunity {
         }
     }
 
+    fun uploadAvatar(
+        context: Context,
+        uri: Uri,
+        callback: (Result<String>) -> Unit
+    ) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        if (uid.isNullOrBlank()) {
+            callback(Result.failure(IllegalStateException("Meld je eerst aan om een profielfoto te uploaden.")))
+            return
+        }
+
+        val contentType = context.contentResolver.getType(uri)
+        if (contentType !in setOf("image/jpeg", "image/png", "image/webp")) {
+            callback(Result.failure(IllegalArgumentException("Kies een JPEG-, PNG- of WebP-afbeelding.")))
+            return
+        }
+
+        val path = "profilePhotos/$uid/avatar"
+        val reference = FirebaseStorage.getInstance().reference.child(path)
+        val metadata = StorageMetadata.Builder()
+            .setContentType(contentType)
+            .build()
+
+        reference.putFile(uri, metadata)
+            .addOnSuccessListener {
+                FirebaseRooms.callFunction(
+                    context,
+                    "setAvatarPath",
+                    mapOf("storagePath" to path)
+                ) { result ->
+                    callback(result.map { path })
+                }
+            }
+            .addOnFailureListener {
+                callback(Result.failure(it))
+            }
+    }
+
+    fun loadAvatar(
+        storagePath: String,
+        callback: (Result<Bitmap>) -> Unit
+    ) {
+        FirebaseStorage.getInstance().reference.child(storagePath)
+            .getBytes(5L * 1024L * 1024L)
+            .addOnSuccessListener { bytes ->
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bitmap == null) {
+                    callback(Result.failure(IllegalStateException("De profielfoto kon niet worden gelezen.")))
+                } else {
+                    callback(Result.success(bitmap))
+                }
+            }
+            .addOnFailureListener {
+                callback(Result.failure(it))
+            }
+    }
+
     fun loadMatchHistory(
         context: Context,
         callback: (Result<List<MatchHistoryItem>>) -> Unit
@@ -204,7 +268,8 @@ internal object FirebaseCommunity {
                 rating = me.int("rating", 1000),
                 wins = me.int("wins"),
                 losses = me.int("losses"),
-                matchesPlayed = me.int("matchesPlayed")
+                matchesPlayed = me.int("matchesPlayed"),
+                avatarPath = me["avatarPath"] as? String
             ),
             friends = root.list("friends").map { parsePlayer(it) },
             friendRequests = root.list("friendRequests").map { item ->
