@@ -19,3 +19,53 @@ export function preserveStoredDisplayName(storedName: unknown, incomingName: str
   }
   return incomingName.trim().replace(/\s+/g, " ").slice(0, 24) || "Skip-Bo speler";
 }
+
+export type MatchHistoryRecord = {
+  matchId: string;
+  winnerUid: string;
+  loserUid: string;
+  winnerName: string;
+  loserName: string;
+  ratingChange: number;
+  playedAtMs: number;
+};
+
+export type PlayerMatchHistoryItem = {
+  matchId: string;
+  opponentName: string;
+  won: boolean;
+  ratingChange: number;
+  playedAtMs: number;
+};
+
+/** Convert private match-result records to the safe view for one participant. */
+export function buildPlayerMatchHistory(
+  uid: string,
+  records: readonly MatchHistoryRecord[]
+): PlayerMatchHistoryItem[] {
+  if (!uid.trim()) throw new Error("A player uid is required.");
+
+  return records
+    .filter((record) =>
+      record.matchId.length > 0 &&
+      record.winnerUid !== record.loserUid &&
+      (record.winnerUid === uid || record.loserUid === uid) &&
+      Number.isSafeInteger(record.ratingChange) &&
+      record.ratingChange >= 0 &&
+      Number.isFinite(record.playedAtMs)
+    )
+    .map((record) => {
+      const won = record.winnerUid === uid;
+      return {
+        matchId: record.matchId,
+        opponentName: won ? record.loserName : record.winnerName,
+        won,
+        ratingChange: won ? record.ratingChange : -record.ratingChange,
+        playedAtMs: record.playedAtMs,
+      };
+    })
+    .sort((a, b) =>
+      b.playedAtMs - a.playedAtMs || a.matchId.localeCompare(b.matchId)
+    );
+}
+
