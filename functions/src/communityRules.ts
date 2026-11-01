@@ -320,8 +320,8 @@ export function nextDailyStreak(
   today: string,
   previousStreak: number
 ): number {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(today)) throw new Error("Today must be an ISO UTC date.");
-  if (!lastClaimedDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(lastClaimedDate)) return 1;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error("Today must be an ISO UTC date.");
+  if (!lastClaimedDate || !/^\d{4}-\d{2}-\d{2}$/.test(lastClaimedDate)) return 1;
   if (lastClaimedDate === today) return 0;
   const last = Date.parse(`${lastClaimedDate}T00:00:00.000Z`);
   const current = Date.parse(`${today}T00:00:00.000Z`);
