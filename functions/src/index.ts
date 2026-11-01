@@ -939,8 +939,6 @@ export const getCommunityOverview = onCall(async (request) => {
   };
 });
 
-});
-
 /** Change the caller's equipped card back after checking the server-owned level unlock. */
 export const setActiveCardTheme = onCall(async (request) => {
   const uid = requireUid(request);
