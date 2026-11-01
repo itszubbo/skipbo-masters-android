@@ -92,5 +92,14 @@ service cloud.firestore {
     match /matchResults/{matchId} {
       allow read, write: if false;
     }
+
+    // Tournament state is deliberately accessed only through authenticated
+    // Cloud Functions. Clients cannot alter entrants, brackets or winners.
+    match /tournaments/{tournamentId} {
+      allow read, write: if false;
+    }
+    match /tournamentMatches/{matchId} {
+      allow read, write: if false;
+    }
   }
 }
