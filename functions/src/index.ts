@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -130,7 +130,7 @@ const cleanDisplayName = (value: unknown, fallback = "Skip-Bo speler") => {
 const friendRequestId = (a: string, b: string) =>
   createHash("sha256").update([a, b].sort().join(":")).digest("hex");
 const initialProfile = (uid: string, displayName: string) => ({
-  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0,
+  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [],
   createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
 });
 
@@ -321,9 +321,13 @@ export const submitOnlineMove = onCall(async (request) => {
       const loserPublicRef = db.doc(`publicProfiles/${loserUid}`);
       const winnerBoardRef = db.doc(`leaderboard/${winnerUid}`);
       const loserBoardRef = db.doc(`leaderboard/${loserUid}`);
-      const [resultSnap, winnerProfile, loserProfile, winnerPublic, loserPublic] = await Promise.all([
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const winnerDailyRef = winnerProfileRef.collection("dailyChallenges").doc(todayKey);
+      const loserDailyRef = loserProfileRef.collection("dailyChallenges").doc(todayKey);
+      const [resultSnap, winnerProfile, loserProfile, winnerPublic, loserPublic, winnerDailySnap, loserDailySnap] = await Promise.all([
         transaction.get(resultRef), transaction.get(winnerProfileRef), transaction.get(loserProfileRef),
         transaction.get(winnerPublicRef), transaction.get(loserPublicRef),
+        transaction.get(winnerDailyRef), transaction.get(loserDailyRef),
       ]);
 
       if (!resultSnap.exists) {
@@ -353,6 +357,16 @@ export const submitOnlineMove = onCall(async (request) => {
           ? previousWinnerStreak + 1
           : 1;
         const loserWinStreak = 0;
+
+        // Daily missions progress only from server-confirmed match results.
+        const winnerDailyUpdate = updateDailyMissionProgress(winnerDailySnap.data() ?? {}, true);
+        const loserDailyUpdate = updateDailyMissionProgress(loserDailySnap.data() ?? {}, false);
+        const winnerXpBefore = Math.max(0, Number(winnerData.xp ?? 0));
+        const loserXpBefore = Math.max(0, Number(loserData.xp ?? 0));
+        const winnerXpAfter = winnerXpBefore + winnerDailyUpdate.xpAwarded;
+        const loserXpAfter = loserXpBefore + loserDailyUpdate.xpAwarded;
+        const winnerLevel = getLevelProgress(winnerXpAfter).level;
+        const loserLevel = getLevelProgress(loserXpAfter).level;
 
         // Determine eligible trophies from the post-match server statistics.
         const winnerEligible = getAchievementProgress({
@@ -458,22 +472,26 @@ export const submitOnlineMove = onCall(async (request) => {
           ...initialProfile(winnerUid, winnerName), ...winnerData,
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
           wins: winnerWins, matchesPlayed: winnerMatches, winStreak: winnerWinStreak,
+          xp: winnerXpAfter,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(loserProfileRef, {
           ...initialProfile(loserUid, loserName), ...loserData,
           uid: loserUid, displayName: loserName, rating: newLoserRating,
           losses: loserLosses, matchesPlayed: loserMatches, winStreak: loserWinStreak,
+          xp: loserXpAfter,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(winnerPublicRef, {
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
           wins: winnerWins, losses: Number(winnerData.losses ?? 0), matchesPlayed: winnerMatches,
+          level: winnerLevel,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(loserPublicRef, {
           uid: loserUid, displayName: loserName, rating: newLoserRating,
           wins: Number(loserData.wins ?? 0), losses: loserLosses, matchesPlayed: loserMatches,
+          level: loserLevel,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(winnerBoardRef, {
@@ -486,6 +504,20 @@ export const submitOnlineMove = onCall(async (request) => {
           matchesPlayed: loserMatches, provisional: loserMatches < 10,
           updatedAt: FieldValue.serverTimestamp(),
         });
+        transaction.set(winnerDailyRef, {
+          dateKey: todayKey,
+          matchesPlayed: winnerDailyUpdate.matchesPlayed,
+          wins: winnerDailyUpdate.wins,
+          completedMissionIds: winnerDailyUpdate.completedMissionIds,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(loserDailyRef, {
+          dateKey: todayKey,
+          matchesPlayed: loserDailyUpdate.matchesPlayed,
+          wins: loserDailyUpdate.wins,
+          completedMissionIds: loserDailyUpdate.completedMissionIds,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
 
         achievementEntries.forEach((entry, index) => {
           if (achievementSnapshots[index].exists) return;
