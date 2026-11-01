@@ -42,7 +42,7 @@ Dit is een vroege speelbare prototypebasis, geen officieel product van Mattel. S
 - [x] Afleggen naar een gekozen persoonlijke aflegstapel
 - [x] Premium donkere speeltafel en goudaccenten
 - [ ] Uitgebreide QA van alle regelrandgevallen en kaartverdeling
-- [ ] Instelbare moeilijkheid voor de computer
+- [x] Instelbare moeilijkheid voor de computer
 - [ ] Geluid, haptiek en kaartanimaties
 - [x] Online speelkamers, privékaartopslag en server-side kaartzetvalidatie (v10 basis)
 - [ ] App Check afdwingen, duurzame Google-accountkoppeling en volledige QA
@@ -535,3 +535,13 @@ De server gebruikt UTC als vaste daggrens (00:00 UTC). De dagreset valt daardoor
 - Optionele eenvoudige geluidseffecten bij zetten en winst; geluid staat standaard uit en is tijdens het spel aan/uit te zetten.
 - De spelweergave blijft nu bestaan tussen zetten, zodat animaties netjes kunnen afronden.
 - Android-versie verhoogd naar 0.19.0 (versionCode 19).
+
+
+## v20 — instelbare computer
+
+- Kies vóór een potje uit drie niveaus: Makkelijk, Normaal of Moeilijk.
+- Makkelijk gebruikt vaker kaarten van de persoonlijke aflegstapels.
+- Normaal houdt de bestaande gebalanceerde speelvolgorde aan: eerst de voorraad, daarna de hand en aflegstapels.
+- Moeilijk bewaart Skip-Bo-jokers waar mogelijk, geeft voorrang aan natuurlijke kaarten en herkent aflegzetten die meteen een volgende kaart vrijspelen.
+- De computer kiest bij iedere stap opnieuw uit alle direct speelbare kaarten en probeert een bouwstapel van twaalf af te ronden.
+- Android-versie verhoogd naar 0.20.0 (versionCode 20).
