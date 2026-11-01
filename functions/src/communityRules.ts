@@ -387,6 +387,22 @@ export function updateSeasonProgress(
   };
 }
 
+
+/**
+ * Build a sortable monthly-season score. Wins are the primary ranking
+ * criterion; total matches break ties. The match component is capped so a
+ * very active account can never overtake a player with one more win.
+ */
+export function seasonRankScore(wins: number, matchesPlayed: number): number {
+  if (!Number.isSafeInteger(wins) || wins < 0 ||
+      !Number.isSafeInteger(matchesPlayed) || matchesPlayed < wins) {
+    throw new Error("Season counters must be non-negative safe integers and wins cannot exceed matches.");
+  }
+  const score = wins * 1_000_000 + Math.min(matchesPlayed, 999_999);
+  if (!Number.isSafeInteger(score)) throw new Error("Season rank score is outside the safe integer range.");
+  return score;
+}
+
 export function isValidAchievementBadgeId(value: string): boolean {
   return /^[a-z0-9_]{1,40}$/.test(value);
 }
