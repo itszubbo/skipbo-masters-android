@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked, updateSeasonProgress, isValidAchievementBadgeId } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -130,7 +130,7 @@ const cleanDisplayName = (value: unknown, fallback = "Skip-Bo speler") => {
 const friendRequestId = (a: string, b: string) =>
   createHash("sha256").update([a, b].sort().join(":")).digest("hex");
 const initialProfile = (uid: string, displayName: string) => ({
-  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [], activeCardTheme: "classic",
+  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [], activeCardTheme: "classic", activeBadgeId: null,
   createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
 });
 
@@ -322,12 +322,16 @@ export const submitOnlineMove = onCall(async (request) => {
       const winnerBoardRef = db.doc(`leaderboard/${winnerUid}`);
       const loserBoardRef = db.doc(`leaderboard/${loserUid}`);
       const todayKey = new Date().toISOString().slice(0, 10);
+      const seasonKey = todayKey.slice(0, 7);
       const winnerDailyRef = winnerProfileRef.collection("dailyChallenges").doc(todayKey);
       const loserDailyRef = loserProfileRef.collection("dailyChallenges").doc(todayKey);
-      const [resultSnap, winnerProfile, loserProfile, winnerPublic, loserPublic, winnerDailySnap, loserDailySnap] = await Promise.all([
+      const winnerSeasonRef = winnerProfileRef.collection("seasons").doc(seasonKey);
+      const loserSeasonRef = loserProfileRef.collection("seasons").doc(seasonKey);
+      const [resultSnap, winnerProfile, loserProfile, winnerPublic, loserPublic, winnerDailySnap, loserDailySnap, winnerSeasonSnap, loserSeasonSnap] = await Promise.all([
         transaction.get(resultRef), transaction.get(winnerProfileRef), transaction.get(loserProfileRef),
         transaction.get(winnerPublicRef), transaction.get(loserPublicRef),
         transaction.get(winnerDailyRef), transaction.get(loserDailyRef),
+        transaction.get(winnerSeasonRef), transaction.get(loserSeasonRef),
       ]);
 
       if (!resultSnap.exists) {
@@ -361,10 +365,25 @@ export const submitOnlineMove = onCall(async (request) => {
         // Daily missions progress only from server-confirmed match results.
         const winnerDailyUpdate = updateDailyMissionProgress(winnerDailySnap.data() ?? {}, true);
         const loserDailyUpdate = updateDailyMissionProgress(loserDailySnap.data() ?? {}, false);
+        const winnerSeasonUpdate = updateSeasonProgress(winnerSeasonSnap.data() ?? {}, true);
+        const loserSeasonUpdate = updateSeasonProgress(loserSeasonSnap.data() ?? {}, false);
         const winnerXpBefore = Math.max(0, Number(winnerData.xp ?? 0));
         const loserXpBefore = Math.max(0, Number(loserData.xp ?? 0));
-        const winnerXpAfter = winnerXpBefore + winnerDailyUpdate.xpAwarded;
-        const loserXpAfter = loserXpBefore + loserDailyUpdate.xpAwarded;
+        const winnerXpAfter = winnerXpBefore + winnerDailyUpdate.xpAwarded + winnerSeasonUpdate.xpAwarded;
+        const loserXpAfter = loserXpBefore + loserDailyUpdate.xpAwarded + loserSeasonUpdate.xpAwarded;
+        const seasonBadgeId = `season_badge_${seasonKey.replace("-", "")}`;
+        const winnerCosmetics = Array.isArray(winnerData.unlockedCosmetics)
+          ? winnerData.unlockedCosmetics.filter((item): item is string => typeof item === "string")
+          : [];
+        const loserCosmetics = Array.isArray(loserData.unlockedCosmetics)
+          ? loserData.unlockedCosmetics.filter((item): item is string => typeof item === "string")
+          : [];
+        const winnerUnlockedCosmetics = winnerSeasonUpdate.rewardUnlocked && !winnerCosmetics.includes(seasonBadgeId)
+          ? [...winnerCosmetics, seasonBadgeId]
+          : winnerCosmetics;
+        const loserUnlockedCosmetics = loserSeasonUpdate.rewardUnlocked && !loserCosmetics.includes(seasonBadgeId)
+          ? [...loserCosmetics, seasonBadgeId]
+          : loserCosmetics;
         const winnerLevel = getLevelProgress(winnerXpAfter).level;
         const loserLevel = getLevelProgress(loserXpAfter).level;
 
@@ -473,6 +492,7 @@ export const submitOnlineMove = onCall(async (request) => {
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
           wins: winnerWins, matchesPlayed: winnerMatches, winStreak: winnerWinStreak,
           xp: winnerXpAfter,
+          unlockedCosmetics: winnerUnlockedCosmetics,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(loserProfileRef, {
@@ -480,6 +500,7 @@ export const submitOnlineMove = onCall(async (request) => {
           uid: loserUid, displayName: loserName, rating: newLoserRating,
           losses: loserLosses, matchesPlayed: loserMatches, winStreak: loserWinStreak,
           xp: loserXpAfter,
+          unlockedCosmetics: loserUnlockedCosmetics,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(winnerPublicRef, {
@@ -516,6 +537,20 @@ export const submitOnlineMove = onCall(async (request) => {
           matchesPlayed: loserDailyUpdate.matchesPlayed,
           wins: loserDailyUpdate.wins,
           completedMissionIds: loserDailyUpdate.completedMissionIds,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(winnerSeasonRef, {
+          seasonKey,
+          matchesPlayed: winnerSeasonUpdate.matchesPlayed,
+          wins: winnerSeasonUpdate.wins,
+          rewardClaimed: winnerSeasonUpdate.rewardClaimed,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(loserSeasonRef, {
+          seasonKey,
+          matchesPlayed: loserSeasonUpdate.matchesPlayed,
+          wins: loserSeasonUpdate.wins,
+          rewardClaimed: loserSeasonUpdate.rewardClaimed,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
 
@@ -913,6 +948,7 @@ export const getCommunityOverview = onCall(async (request) => {
       wins: Number(data.wins ?? 0),
       losses: Number(data.losses ?? 0),
       matchesPlayed: Number(data.matchesPlayed ?? 0),
+      activeBadgeId: typeof data.activeBadgeId === "string" ? data.activeBadgeId : null,
     };
   };
   const me = profileSnap.data() ?? {};
@@ -921,6 +957,7 @@ export const getCommunityOverview = onCall(async (request) => {
       uid, displayName: cleanDisplayName(me.displayName), friendCode: String(me.friendCode ?? ""),
       rating: Number(me.rating ?? 1000), wins: Number(me.wins ?? 0), losses: Number(me.losses ?? 0),
       matchesPlayed: Number(me.matchesPlayed ?? 0),
+      activeBadgeId: typeof me.activeBadgeId === "string" ? me.activeBadgeId : null,
       xp: Number(me.xp ?? 0),
       level: getLevelProgress(Number(me.xp ?? 0)).level,
       unlockedCosmetics: Array.isArray(me.unlockedCosmetics) ? me.unlockedCosmetics : [],
@@ -985,6 +1022,7 @@ export const getLeaderboardPage = onCall(async (request) => {
     rating: Number(doc.get("rating") ?? 1000),
     matchesPlayed: Number(doc.get("matchesPlayed") ?? 0),
     provisional: Boolean(doc.get("provisional")),
+    activeBadgeId: typeof doc.get("activeBadgeId") === "string" ? doc.get("activeBadgeId") : null,
   }));
   const last = docs.length > 0 ? docs[docs.length - 1] : undefined;
   return {
