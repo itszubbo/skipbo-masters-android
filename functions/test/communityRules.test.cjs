@@ -268,3 +268,20 @@ test("only safe achievement ids are accepted for profile badge selection", () =>
   assert.equal(isValidAchievementBadgeId(""), false);
   assert.equal(isValidAchievementBadgeId("A".repeat(41)), false);
 });
+
+
+test("monthly season rank score prioritizes wins, then matches played", () => {
+  const { seasonRankScore } = require("../lib/communityRules.js");
+  assert.ok(seasonRankScore(2, 2) > seasonRankScore(1, 999));
+  assert.ok(seasonRankScore(2, 9) > seasonRankScore(2, 4));
+  assert.equal(seasonRankScore(0, 999999), 999999);
+  assert.equal(seasonRankScore(0, 1000000), 999999);
+});
+
+test("monthly season rank score rejects invalid counters and unsafe values", () => {
+  const { seasonRankScore } = require("../lib/communityRules.js");
+  assert.throws(() => seasonRankScore(-1, 0));
+  assert.throws(() => seasonRankScore(3, 2));
+  assert.throws(() => seasonRankScore(1, 1.5));
+  assert.throws(() => seasonRankScore(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER));
+});
