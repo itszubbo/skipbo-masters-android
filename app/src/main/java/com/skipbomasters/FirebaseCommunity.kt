@@ -16,7 +16,10 @@ internal data class CommunityProfile(
     val wins: Int,
     val losses: Int,
     val matchesPlayed: Int,
-    val avatarPath: String? = null
+    val avatarPath: String? = null,
+    val xp: Int = 0,
+    val level: Int = 1,
+    val unlockedCosmetics: List<String> = emptyList()
 )
 
 internal data class CommunityPlayer(
@@ -53,6 +56,37 @@ internal data class MatchHistoryItem(
     val won: Boolean,
     val ratingChange: Int,
     val playedAtMs: Long
+)
+
+internal data class DailyMissionItem(
+    val id: String,
+    val title: String,
+    val description: String,
+    val progress: Int,
+    val target: Int,
+    val xpReward: Int,
+    val completed: Boolean
+)
+
+internal data class DailyProgress(
+    val dateKey: String,
+    val missions: List<DailyMissionItem>,
+    val canClaim: Boolean,
+    val streak: Int,
+    val xpReward: Int,
+    val level: Int,
+    val xp: Int,
+    val xpIntoLevel: Int,
+    val xpForNextLevel: Int,
+    val unlockedCosmetics: List<String>
+)
+
+internal data class DailyClaimResult(
+    val claimed: Boolean,
+    val xpAwarded: Int,
+    val streak: Int,
+    val level: Int,
+    val cosmeticUnlocked: String?
 )
 
 internal data class AchievementItem(
@@ -253,6 +287,62 @@ internal object FirebaseCommunity {
         }
     }
 
+    fun loadDailyProgress(
+        context: Context,
+        callback: (Result<DailyProgress>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(context, "getDailyProgress", emptyMap()) { result ->
+            callback(result.mapCatching { data ->
+                val root = data.asMap()
+                val reward = root["loginReward"].asMap()
+                val level = root["level"].asMap()
+                val missions = root.list("missions").map { item ->
+                    val map = item.asMap()
+                    DailyMissionItem(
+                        id = map.string("id"),
+                        title = map.string("title"),
+                        description = map.string("description"),
+                        progress = map.int("progress"),
+                        target = map.int("target"),
+                        xpReward = map.int("xpReward"),
+                        completed = map["completed"] as? Boolean ?: false
+                    )
+                }
+                DailyProgress(
+                    dateKey = root.string("dateKey"),
+                    missions = missions,
+                    canClaim = reward["canClaim"] as? Boolean ?: false,
+                    streak = reward.int("streak"),
+                    xpReward = reward.int("xpReward", 25),
+                    level = level.int("level", 1),
+                    xp = level.int("xp"),
+                    xpIntoLevel = level.int("xpIntoLevel"),
+                    xpForNextLevel = level.int("xpForNextLevel", 500),
+                    unlockedCosmetics = root.list("unlockedCosmetics").mapNotNull { it as? String }
+                )
+            })
+        }
+    }
+
+    fun claimDailyReward(
+        context: Context,
+        callback: (Result<DailyClaimResult>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(context, "claimDailyReward", emptyMap()) { result ->
+            callback(result.mapCatching { data ->
+                val map = data.asMap()
+                val level = map["level"].asMap()
+                DailyClaimResult(
+                    claimed = map["claimed"] as? Boolean ?: false,
+                    xpAwarded = map.int("xpAwarded"),
+                    streak = map.int("streak"),
+                    level = level.int("level", 1),
+                    cosmeticUnlocked = map["cosmeticUnlocked"] as? String
+                )
+            })
+        }
+    }
+
     fun loadAchievements(
         context: Context,
         callback: (Result<List<AchievementItem>>) -> Unit
@@ -398,7 +488,10 @@ internal object FirebaseCommunity {
                 wins = me.int("wins"),
                 losses = me.int("losses"),
                 matchesPlayed = me.int("matchesPlayed"),
-                avatarPath = me["avatarPath"] as? String
+                avatarPath = me["avatarPath"] as? String,
+                xp = me.int("xp"),
+                level = me.int("level", 1),
+                unlockedCosmetics = me.list("unlockedCosmetics").mapNotNull { it as? String }
             ),
             friends = root.list("friends").map { parsePlayer(it) },
             friendRequests = root.list("friendRequests").map { item ->
