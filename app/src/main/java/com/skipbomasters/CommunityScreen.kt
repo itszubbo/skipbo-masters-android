@@ -1,7 +1,12 @@
 package com.skipbomasters
 
 import android.content.Intent
+import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,9 +14,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -36,6 +43,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,12 +84,25 @@ internal fun CommunityScreen(
     var historyLoaded by remember { mutableStateOf(false) }
     var achievements by remember { mutableStateOf<List<AchievementItem>>(emptyList()) }
     var achievementsLoaded by remember { mutableStateOf(false) }
+    var avatarBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var avatarBusy by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var friendCodeInput by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
+
+    fun loadAvatar(path: String?) {
+        if (path.isNullOrBlank()) {
+            avatarBitmap = null
+            return
+        }
+        FirebaseCommunity.loadAvatar(path) { result ->
+            result.onSuccess { avatarBitmap = it }
+                .onFailure { avatarBitmap = null }
+        }
+    }
 
     fun loadOverview() {
         loading = true
@@ -89,6 +112,7 @@ internal fun CommunityScreen(
             result.onSuccess {
                 overview = it
                 displayName = it.profile.displayName
+                loadAvatar(it.profile.avatarPath)
                 val user = runCatching { FirebaseAuth.getInstance().currentUser }.getOrNull()
                 googleLinked = user?.providerData?.any { provider -> provider.providerId == "google.com" } == true
                 googleEmail = user?.email.orEmpty()
@@ -143,6 +167,26 @@ internal fun CommunityScreen(
             }
         }
     }
+ 
+    val avatarPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            avatarBusy = true
+            error = ""
+            FirebaseCommunity.uploadAvatar(context, uri) { result ->
+                avatarBusy = false
+                result.onSuccess { path ->
+                    loadAvatar(path)
+                    notice = "Profielfoto bijgewerkt."
+                    loadOverview()
+                }.onFailure {
+                    error = it.localizedMessage ?: "Profielfoto uploaden is mislukt."
+                }
+            }
+        }
+    }
+
 
     LaunchedEffect(Unit) {
         // Load the authenticated profile first; only then request the leaderboard.
@@ -200,7 +244,50 @@ internal fun CommunityScreen(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(data.profile.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        val currentAvatar = avatarBitmap
+                        if (currentAvatar != null) {
+                            Image(
+                                bitmap = currentAvatar.asImageBitmap(),
+                                contentDescription = "Profielfoto",
+                                modifier = Modifier.size(68.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Card(
+                                modifier = Modifier.size(68.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF245A43)),
+                                shape = CircleShape
+                            ) {
+                                Column(
+                                    Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text("SM", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                                }
+                            }
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(data.profile.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            OutlinedButton(
+                                enabled = !avatarBusy,
+                                onClick = {
+                                    avatarPicker.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                        )
+                                    )
+                                }
+                            ) {
+                                Text(if (avatarBusy) "Foto uploaden…" else "Profielfoto wijzigen")
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = displayName,
                         onValueChange = { displayName = it.take(24) },
