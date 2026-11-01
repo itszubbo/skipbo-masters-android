@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, getAchievementProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -965,5 +965,307 @@ export const setAvatarPath = onCall(async (request) => {
   });
 
   return { avatarPath: expectedPath };
+});
+
+const tournamentCode = (value: unknown): string => {
+  const id = String(value ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{10,40}$/.test(id)) {
+    throw new HttpsError("invalid-argument", "Ongeldige toernooicode.");
+  }
+  return id;
+};
+
+const tournamentRoomCode = () =>
+  Array.from({ length: 6 }, () => FRIEND_ALPHABET[randomInt(FRIEND_ALPHABET.length)]).join("");
+
+/** Create a private tournament; only existing friends can join via its invite ID. */
+export const createTournament = onCall(async (request) => {
+  const uid = requireUid(request);
+  const title = cleanDisplayName(request.data?.title, "Vriendentoernooi").slice(0, 32);
+  const capacity = Number(request.data?.capacity);
+  if (capacity !== 4 && capacity !== 8) {
+    throw new HttpsError("invalid-argument", "Kies een toernooi met vier of acht spelers.");
+  }
+
+  const [profileSnap, publicSnap] = await Promise.all([
+    db.doc(`profiles/${uid}`).get(),
+    db.doc(`publicProfiles/${uid}`).get(),
+  ]);
+  const profile = profileSnap.data() ?? {};
+  const publicProfile = publicSnap.data() ?? {};
+  const displayName = cleanDisplayName(profile.displayName ?? publicProfile.displayName);
+  const tournamentRef = db.collection("tournaments").doc();
+  const inviteCode = tournamentRef.id;
+
+  await tournamentRef.create({
+    title,
+    ownerUid: uid,
+    capacity,
+    participantUids: [uid],
+    participants: {
+      [uid]: {
+        uid,
+        displayName,
+        rating: Number(profile.rating ?? 1000),
+      },
+    },
+    status: "OPEN",
+    rounds: [],
+    winnerUid: null,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  return { tournamentId: tournamentRef.id, inviteCode, title, capacity };
+});
+
+/** Join a friend's open tournament. The backend verifies the friendship in both directions. */
+export const joinTournament = onCall(async (request) => {
+  const uid = requireUid(request);
+  const id = tournamentCode(request.data?.tournamentId);
+  const tournamentRef = db.collection("tournaments").doc(id);
+  const profileRef = db.doc(`profiles/${uid}`);
+  const [profileSnap, publicSnap] = await Promise.all([
+    profileRef.get(),
+    db.doc(`publicProfiles/${uid}`).get(),
+  ]);
+  const profile = profileSnap.data() ?? {};
+  const displayName = cleanDisplayName(profile.displayName ?? publicSnap.get("displayName"));
+
+  return db.runTransaction(async (transaction) => {
+    const tournamentSnap = await transaction.get(tournamentRef);
+    if (!tournamentSnap.exists) throw new HttpsError("not-found", "Dit toernooi bestaat niet.");
+    const tournament = tournamentSnap.data() ?? {};
+    const ownerUid = String(tournament.ownerUid ?? "");
+    const participantUids = Array.isArray(tournament.participantUids)
+      ? tournament.participantUids.filter((item): item is string => typeof item === "string")
+      : [];
+
+    if (participantUids.includes(uid)) {
+      return { tournamentId: id, status: String(tournament.status ?? "OPEN"), joined: false };
+    }
+    if (tournament.status !== "OPEN") {
+      throw new HttpsError("failed-precondition", "Dit toernooi is al vol of gestart.");
+    }
+    const capacity = Number(tournament.capacity);
+    if ((capacity !== 4 && capacity !== 8) || participantUids.length >= capacity) {
+      throw new HttpsError("failed-precondition", "Dit toernooi heeft geen vrije plaatsen meer.");
+    }
+
+    const friendshipRefs = [
+      db.doc(`profiles/${ownerUid}/friends/${uid}`),
+      db.doc(`profiles/${uid}/friends/${ownerUid}`),
+    ];
+    const friendships = await Promise.all(friendshipRefs.map((ref) => transaction.get(ref)));
+    if (!friendships.some((snapshot) => snapshot.exists)) {
+      throw new HttpsError("permission-denied", "Alleen vrienden van de organisator kunnen deelnemen.");
+    }
+
+    const participants = {
+      ...(tournament.participants as Record<string, { uid: string; displayName: string; rating: number }> ?? {}),
+      [uid]: { uid, displayName, rating: Number(profile.rating ?? 1000) },
+    };
+    const updatedUids = [...participantUids, uid];
+    if (updatedUids.length < capacity) {
+      transaction.update(tournamentRef, {
+        participantUids: updatedUids,
+        participants,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { tournamentId: id, status: "OPEN", joined: true };
+    }
+
+    // Shuffle the final seed list server-side before building the bracket.
+    const seeds = [...updatedUids];
+    for (let index = seeds.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInt(index + 1);
+      [seeds[index], seeds[swapIndex]] = [seeds[swapIndex], seeds[index]];
+    }
+    const bracket = buildTournamentBracket(seeds);
+    const matchRefs = bracket.map(() => db.collection("tournamentMatches").doc());
+    const roundCount = Math.log2(capacity);
+    const rounds = Array.from({ length: roundCount }, (_, index) => ({
+      round: index + 1,
+      matchIds: bracket
+        .map((match, matchIndex) => ({ match, id: matchRefs[matchIndex].id }))
+        .filter((entry) => entry.match.round === index + 1)
+        .map((entry) => entry.id),
+    }));
+
+    bracket.forEach((match, index) => {
+      const player1Uid = match.playerUids[0] ?? null;
+      const player2Uid = match.playerUids[1] ?? null;
+      transaction.create(matchRefs[index], {
+        tournamentId: id,
+        round: match.round,
+        slot: match.slot,
+        player1Uid,
+        player2Uid,
+        playerUids: match.playerUids,
+        status: match.playerUids.length === 2 ? "WAITING" : "WAITING_FOR_PLAYERS",
+        roomCode: null,
+        winnerUid: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    transaction.update(tournamentRef, {
+      participantUids: updatedUids,
+      participants,
+      status: "RUNNING",
+      rounds,
+      roundCount,
+      startedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { tournamentId: id, status: "RUNNING", joined: true };
+  });
+});
+
+/** List only tournaments in which the caller is a participant. */
+export const getMyTournaments = onCall(async (request) => {
+  const uid = requireUid(request);
+  const snapshot = await db.collection("tournaments")
+    .where("participantUids", "array-contains", uid)
+    .limit(20)
+    .get();
+
+  return {
+    tournaments: snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const participants = data.participants as Record<string, { uid?: string; displayName?: string }> ?? {};
+      return {
+        tournamentId: doc.id,
+        title: String(data.title ?? "Vriendentoernooi"),
+        capacity: Number(data.capacity ?? 4),
+        status: String(data.status ?? "OPEN"),
+        participantCount: Array.isArray(data.participantUids) ? data.participantUids.length : 0,
+        participants: Object.values(participants).map((player) => ({
+          uid: String(player.uid ?? ""),
+          displayName: cleanDisplayName(player.displayName),
+        })),
+        inviteCode: doc.id,
+      };
+    }),
+  };
+});
+
+/** Load the bracket after verifying that the caller belongs to the tournament. */
+export const getTournamentDetails = onCall(async (request) => {
+  const uid = requireUid(request);
+  const id = tournamentCode(request.data?.tournamentId);
+  const tournamentRef = db.collection("tournaments").doc(id);
+  const tournamentSnap = await tournamentRef.get();
+  if (!tournamentSnap.exists) throw new HttpsError("not-found", "Dit toernooi bestaat niet.");
+  const tournament = tournamentSnap.data() ?? {};
+  const participantUids = Array.isArray(tournament.participantUids) ? tournament.participantUids : [];
+  if (!participantUids.includes(uid)) {
+    throw new HttpsError("permission-denied", "Je neemt niet deel aan dit toernooi.");
+  }
+
+  const participants = tournament.participants as Record<string, { uid?: string; displayName?: string }> ?? {};
+  const rounds = Array.isArray(tournament.rounds) ? tournament.rounds as Array<{ round: number; matchIds: string[] }> : [];
+  const matchIds = rounds.flatMap((round) => Array.isArray(round.matchIds) ? round.matchIds : []);
+  const refs = matchIds.map((matchId) => db.collection("tournamentMatches").doc(matchId));
+  const snapshots = refs.length ? await db.getAll(...refs) : [];
+  const matches = snapshots.filter((snapshot) => snapshot.exists).map((snapshot) => {
+    const data = snapshot.data() ?? {};
+    const player1Uid = typeof data.player1Uid === "string" ? data.player1Uid : null;
+    const player2Uid = typeof data.player2Uid === "string" ? data.player2Uid : null;
+    const winnerUid = typeof data.winnerUid === "string" ? data.winnerUid : null;
+    return {
+      matchId: snapshot.id,
+      round: Number(data.round ?? 1),
+      slot: Number(data.slot ?? 0),
+      player1Name: player1Uid ? cleanDisplayName(participants[player1Uid]?.displayName) : "Nog te bepalen",
+      player2Name: player2Uid ? cleanDisplayName(participants[player2Uid]?.displayName) : "Nog te bepalen",
+      status: String(data.status ?? "WAITING"),
+      winnerName: winnerUid ? cleanDisplayName(participants[winnerUid]?.displayName) : null,
+      roomCode: data.status === "PLAYING" ? String(data.roomCode ?? "") : null,
+      canStart: data.status === "WAITING" && player1Uid !== null && player2Uid !== null
+        && (player1Uid === uid || player2Uid === uid),
+    };
+  }).sort((a, b) => a.round - b.round || a.slot - b.slot);
+
+  return {
+    tournament: {
+      tournamentId: id,
+      title: String(tournament.title ?? "Vriendentoernooi"),
+      capacity: Number(tournament.capacity ?? 4),
+      status: String(tournament.status ?? "OPEN"),
+      participantCount: participantUids.length,
+      participants: Object.values(participants).map((player) => ({
+        uid: String(player.uid ?? ""),
+        displayName: cleanDisplayName(player.displayName),
+      })),
+      winnerName: tournament.winnerUid
+        ? cleanDisplayName(participants[String(tournament.winnerUid)]?.displayName)
+        : null,
+    },
+    matches,
+  };
+});
+
+/** Create or reopen the online room for a specific tournament pairing. */
+export const startTournamentMatch = onCall(async (request) => {
+  const uid = requireUid(request);
+  const id = tournamentCode(request.data?.tournamentId);
+  const matchId = String(request.data?.matchId ?? "").trim();
+  if (!/^[A-Za-z0-9]{15,40}$/.test(matchId)) {
+    throw new HttpsError("invalid-argument", "Ongeldige toernoo wedstrijd.");
+  }
+
+  const tournamentRef = db.collection("tournaments").doc(id);
+  const matchRef = db.collection("tournamentMatches").doc(matchId);
+  const code = tournamentRoomCode();
+  const roomRef = db.collection(ROOMS).doc(code);
+
+  return db.runTransaction(async (transaction) => {
+    const [tournamentSnap, matchSnap, roomSnap] = await Promise.all([
+      transaction.get(tournamentRef), transaction.get(matchRef), transaction.get(roomRef),
+    ]);
+    if (!tournamentSnap.exists || !matchSnap.exists) {
+      throw new HttpsError("not-found", "De toernooiwedstrijd bestaat niet.");
+    }
+    const tournament = tournamentSnap.data() ?? {};
+    const match = matchSnap.data() ?? {};
+    if (match.tournamentId !== id || tournament.status !== "RUNNING") {
+      throw new HttpsError("failed-precondition", "Deze toernooiwedstrijd kan niet worden gestart.");
+    }
+    const players = Array.isArray(match.playerUids) ? match.playerUids : [];
+    if (!players.includes(uid)) {
+      throw new HttpsError("permission-denied", "Je bent geen speler in deze wedstrijd.");
+    }
+    if (match.status === "PLAYING" && typeof match.roomCode === "string") {
+      return { roomCode: match.roomCode };
+    }
+    if (match.status !== "WAITING" || players.length !== 2) {
+      throw new HttpsError("failed-precondition", "Deze wedstrijd wacht nog op eerdere rondes.");
+    }
+    if (roomSnap.exists) {
+      throw new HttpsError("aborted", "Er is een kamercodebotsing opgetreden. Probeer opnieuw.");
+    }
+
+    const participantData = tournament.participants as Record<string, { displayName?: string }> ?? {};
+    const hostUid = String(players[0]);
+    const guestUid = String(players[1]);
+    const hostName = cleanDisplayName(participantData[hostUid]?.displayName);
+    const guestName = cleanDisplayName(participantData[guestUid]?.displayName);
+    transaction.create(roomRef, {
+      hostUid, hostName, guestUid, guestName,
+      status: "READY",
+      tournamentId: id,
+      tournamentMatchId: matchId,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(matchRef, {
+      status: "PLAYING",
+      roomCode: code,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { roomCode: code };
+  });
 });
 
