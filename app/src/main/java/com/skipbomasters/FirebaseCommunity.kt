@@ -66,6 +66,37 @@ internal data class AchievementItem(
     val unlockedAtMs: Long?
 )
 
+internal data class TournamentParticipant(
+    val uid: String,
+    val displayName: String
+)
+
+internal data class TournamentSummary(
+    val tournamentId: String,
+    val title: String,
+    val capacity: Int,
+    val status: String,
+    val participantCount: Int,
+    val inviteCode: String,
+    val participants: List<TournamentParticipant>
+)
+
+internal data class TournamentMatchItem(
+    val matchId: String,
+    val round: Int,
+    val slot: Int,
+    val player1Name: String,
+    val player2Name: String,
+    val status: String,
+    val winnerName: String?,
+    val canOpen: Boolean
+)
+
+internal data class TournamentDetails(
+    val tournament: TournamentSummary,
+    val matches: List<TournamentMatchItem>
+)
+
 internal data class LeaderboardCursor(val rating: Int, val uid: String)
 internal data class LeaderboardPage(
     val players: List<CommunityPlayer>,
@@ -245,6 +276,103 @@ internal object FirebaseCommunity {
         }
     }
 
+    fun loadTournaments(
+        context: Context,
+        callback: (Result<List<TournamentSummary>>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(context, "getMyTournaments", emptyMap()) { result ->
+            callback(result.mapCatching { data ->
+                data.asMap().list("tournaments").map { parseTournament(it) }
+            })
+        }
+    }
+
+    fun createTournament(
+        context: Context,
+        title: String,
+        capacity: Int,
+        callback: (Result<TournamentSummary>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(
+            context,
+            "createTournament",
+            mapOf("title" to title.trim().take(32), "capacity" to capacity)
+        ) { result ->
+            callback(result.mapCatching { data ->
+                val map = data.asMap()
+                TournamentSummary(
+                    tournamentId = map.string("tournamentId"),
+                    title = map.string("title"),
+                    capacity = map.int("capacity"),
+                    status = "OPEN",
+                    participantCount = 1,
+                    inviteCode = map.string("inviteCode"),
+                    participants = emptyList()
+                )
+            })
+        }
+    }
+
+    fun joinTournament(
+        context: Context,
+        tournamentId: String,
+        callback: (Result<String>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(
+            context,
+            "joinTournament",
+            mapOf("tournamentId" to tournamentId.trim())
+        ) { result ->
+            callback(result.mapCatching { data -> data.asMap().string("status") })
+        }
+    }
+
+    fun loadTournamentDetails(
+        context: Context,
+        tournamentId: String,
+        callback: (Result<TournamentDetails>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(
+            context,
+            "getTournamentDetails",
+            mapOf("tournamentId" to tournamentId)
+        ) { result ->
+            callback(result.mapCatching { data ->
+                val root = data.asMap()
+                val tournament = parseTournament(root["tournament"])
+                val matches = root.list("matches").map { item ->
+                    val map = item.asMap()
+                    TournamentMatchItem(
+                        matchId = map.string("matchId"),
+                        round = map.int("round"),
+                        slot = map.int("slot"),
+                        player1Name = map.string("player1Name", "Nog te bepalen"),
+                        player2Name = map.string("player2Name", "Nog te bepalen"),
+                        status = map.string("status", "WAITING"),
+                        winnerName = map["winnerName"] as? String,
+                        canOpen = map["canOpen"] as? Boolean ?: false
+                    )
+                }
+                TournamentDetails(tournament, matches)
+            })
+        }
+    }
+
+    fun startTournamentMatch(
+        context: Context,
+        tournamentId: String,
+        matchId: String,
+        callback: (Result<String>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(
+            context,
+            "startTournamentMatch",
+            mapOf("tournamentId" to tournamentId, "matchId" to matchId)
+        ) { result ->
+            callback(result.mapCatching { data -> data.asMap().string("roomCode") })
+        }
+    }
+
     fun loadLeaderboard(
         context: Context,
         cursor: LeaderboardCursor? = null,
@@ -294,6 +422,26 @@ internal object FirebaseCommunity {
                     uid = it["uid"] as? String ?: ""
                 )
             }
+        )
+    }
+
+    private fun parseTournament(value: Any?): TournamentSummary {
+        val map = value.asMap()
+        val participants = map.list("participants").map { item ->
+            val player = item.asMap()
+            TournamentParticipant(
+                uid = player.string("uid"),
+                displayName = player.string("displayName", "Speler")
+            )
+        }
+        return TournamentSummary(
+            tournamentId = map.string("tournamentId"),
+            title = map.string("title", "Vriendentoernooi"),
+            capacity = map.int("capacity", 4),
+            status = map.string("status", "OPEN"),
+            participantCount = map.int("participantCount", participants.size),
+            inviteCode = map.string("inviteCode"),
+            participants = participants
         )
     }
 
