@@ -524,3 +524,14 @@ De server gebruikt UTC als vaste daggrens (00:00 UTC). De dagreset valt daardoor
 - Fysieke toesteltest van de dagelijkse claim, het niveau en de avatar-rand.
 - De functies moeten naar het eigen Firebase-project worden uitgerold voordat de live uitdagingen en beloningen werken.
 
+
+
+## v19 — kaartanimaties, geluid en overwinning
+
+- Speelkaarten geven een korte indruk-/schaalreactie wanneer je ze aanraakt.
+- De bovenste kaart van een bouw- of aflegstapel wisselt met een vloeiende fade- en schaalanimatie.
+- De markering van de actieve speler verloopt vloeiend wanneer de beurt wisselt.
+- Een winstmelding verschijnt met een opvallende goudkleurige animatie.
+- Optionele eenvoudige geluidseffecten bij zetten en winst; geluid staat standaard uit en is tijdens het spel aan/uit te zetten.
+- De spelweergave blijft nu bestaan tussen zetten, zodat animaties netjes kunnen afronden.
+- Android-versie verhoogd naar 0.19.0 (versionCode 19).
