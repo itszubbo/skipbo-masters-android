@@ -871,3 +871,46 @@ export const getMyMatchHistory = onCall(async (request) => {
   return { matches };
 });
 
+/** Return the signed-in player's achievement catalogue and server-owned unlocks. */
+export const getMyAchievements = onCall(async (request) => {
+  const uid = requireUid(request);
+  const profileRef = db.doc(`profiles/${uid}`);
+  const [profileSnap, unlockSnapshot] = await Promise.all([
+    profileRef.get(),
+    profileRef.collection("achievements").get(),
+  ]);
+
+  if (!profileSnap.exists) {
+    throw new HttpsError("failed-precondition", "Je spelersprofiel is nog niet aangemaakt.");
+  }
+
+  const profile = profileSnap.data() ?? {};
+  const unlockedById = new Map(unlockSnapshot.docs.map((doc) => [doc.id, doc]));
+  const unlockedIds = new Set(unlockedById.keys());
+  const progress = getAchievementProgress({
+    wins: Number(profile.wins ?? 0),
+    matchesPlayed: Number(profile.matchesPlayed ?? 0),
+    winStreak: Number(profile.winStreak ?? 0),
+    rating: Number(profile.rating ?? 1000),
+  }, unlockedIds);
+
+  return {
+    achievements: progress.map((achievement) => {
+      const unlock = unlockedById.get(achievement.id);
+      const unlockedAt = unlock?.get("unlockedAt") as { toMillis?: () => number } | undefined;
+      return {
+        ...achievement,
+        unlockedAtMs: unlockedAt && typeof unlockedAt.toMillis === "function"
+          ? unlockedAt.toMillis()
+          : null,
+      };
+    }),
+    stats: {
+      wins: Number(profile.wins ?? 0),
+      matchesPlayed: Number(profile.matchesPlayed ?? 0),
+      winStreak: Number(profile.winStreak ?? 0),
+      rating: Number(profile.rating ?? 1000),
+    },
+  };
+});
+
