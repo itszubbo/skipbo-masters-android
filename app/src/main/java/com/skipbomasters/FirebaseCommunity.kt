@@ -48,6 +48,17 @@ internal data class MatchHistoryItem(
     val playedAtMs: Long
 )
 
+internal data class AchievementItem(
+    val id: String,
+    val title: String,
+    val description: String,
+    val category: String,
+    val progress: Int,
+    val target: Int,
+    val unlocked: Boolean,
+    val unlockedAtMs: Long?
+)
+
 internal data class LeaderboardCursor(val rating: Int, val uid: String)
 internal data class LeaderboardPage(
     val players: List<CommunityPlayer>,
@@ -140,6 +151,30 @@ internal object FirebaseCommunity {
                         won = map["won"] as? Boolean ?: false,
                         ratingChange = map.int("ratingChange"),
                         playedAtMs = (map["playedAtMs"] as? Number)?.toLong() ?: 0L
+                    )
+                }
+            })
+        }
+    }
+
+    fun loadAchievements(
+        context: Context,
+        callback: (Result<List<AchievementItem>>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(context, "getMyAchievements", emptyMap()) { result ->
+            callback(result.mapCatching { data ->
+                val root = data.asMap()
+                root.list("achievements").map { item ->
+                    val map = item.asMap()
+                    AchievementItem(
+                        id = map.string("id"),
+                        title = map.string("title"),
+                        description = map.string("description"),
+                        category = map.string("category"),
+                        progress = map.int("progress"),
+                        target = map.int("target"),
+                        unlocked = map["unlocked"] as? Boolean ?: false,
+                        unlockedAtMs = (map["unlockedAtMs"] as? Number)?.toLong()
                     )
                 }
             })
