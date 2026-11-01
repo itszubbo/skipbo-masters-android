@@ -22,7 +22,7 @@ data class OnlineRoom(
 }
 
 data class OnlinePrivateState(val revision: Long, val hand: List<Int>)
-data class OnlineCommit(val revision: Long, val payload: String, val hand: List<Int>)
+data class OnlineCommit(val revision: Long, val payload: String, val hand: List<Int>, val unlockedAchievements: List<String> = emptyList())
 data class SavedRoomSession(val code: String, val playerName: String)
 
 object FirebaseRooms {
@@ -230,7 +230,8 @@ object FirebaseRooms {
         val hand = (privatePlayer["hand"] as? List<*>)?.map {
             (it as? Number)?.toInt() ?: throw IllegalStateException("Ongeldige kaartdata van server.")
         } ?: throw IllegalStateException("Serverantwoord mist de privéhand.")
-        return OnlineCommit(revision, payload, hand)
+        val unlockedAchievements = (map["unlockedAchievements"] as? List<*>)?.mapNotNull { it as? String }.orEmpty()
+        return OnlineCommit(revision, payload, hand, unlockedAchievements)
     }
 
     fun listenPrivatePlayer(context: Context, code: String, callback: (Result<OnlinePrivateState?>) -> Unit): ListenerRegistration? {
