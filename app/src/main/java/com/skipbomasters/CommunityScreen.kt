@@ -84,6 +84,12 @@ internal fun CommunityScreen(
     var historyLoaded by remember { mutableStateOf(false) }
     var achievements by remember { mutableStateOf<List<AchievementItem>>(emptyList()) }
     var achievementsLoaded by remember { mutableStateOf(false) }
+    var tournaments by remember { mutableStateOf<List<TournamentSummary>>(emptyList()) }
+    var tournamentsLoaded by remember { mutableStateOf(false) }
+    var tournamentTitle by remember { mutableStateOf("Mijn vriendentoernooi") }
+    var tournamentCapacity by remember { mutableIntStateOf(4) }
+    var tournamentCodeInput by remember { mutableStateOf("") }
+    var tournamentDetails by remember { mutableStateOf<TournamentDetails?>(null) }
     var avatarBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var avatarBusy by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -168,6 +174,94 @@ internal fun CommunityScreen(
         }
     }
  
+    fun loadTournaments() {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadTournaments(context) { result ->
+            loading = false
+            result.onSuccess {
+                tournaments = it
+                tournamentsLoaded = true
+            }.onFailure {
+                tournamentsLoaded = false
+                error = it.localizedMessage ?: "Toernooien konden niet worden geladen."
+            }
+        }
+    }
+
+    fun loadTournamentDetails(tournamentId: String) {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadTournamentDetails(context, tournamentId) { result ->
+            loading = false
+            result.onSuccess {
+                tournamentDetails = it
+                tournamentCodeInput = it.tournament.inviteCode
+            }.onFailure {
+                error = it.localizedMessage ?: "Toernooi kon niet worden geopend."
+            }
+        }
+    }
+
+    fun createTournamentNow() {
+        loading = true
+        error = ""
+        FirebaseCommunity.createTournament(context, tournamentTitle, tournamentCapacity) { result ->
+            loading = false
+            result.onSuccess { created ->
+                notice = "Toernooi aangemaakt. Deel de code met je Skip-Bo-vrienden."
+                tournamentDetails = null
+                loadTournaments()
+                loadTournamentDetails(created.tournamentId)
+            }.onFailure {
+                error = it.localizedMessage ?: "Toernooi aanmaken is mislukt."
+            }
+        }
+    }
+
+    fun joinTournamentNow() {
+        val code = tournamentCodeInput.trim()
+        if (code.isBlank()) {
+            error = "Vul eerst de toernooicode in."
+            return
+        }
+        loading = true
+        error = ""
+        FirebaseCommunity.joinTournament(context, code) { result ->
+            loading = false
+            result.onSuccess { status ->
+                notice = if (status == "RUNNING") {
+                    "Je bent toegevoegd. Het toernooi is gestart!"
+                } else {
+                    "Je bent toegevoegd aan het toernooi."
+                }
+                loadTournaments()
+                loadTournamentDetails(code)
+            }.onFailure {
+                error = it.localizedMessage ?: "Deelname aan het toernooi is mislukt."
+            }
+        }
+    }
+
+    fun openTournamentMatch(match: TournamentMatchItem) {
+        val currentTournament = tournamentDetails ?: return
+        loading = true
+        error = ""
+        FirebaseCommunity.startTournamentMatch(
+            context,
+            currentTournament.tournament.tournamentId,
+            match.matchId
+        ) { result ->
+            loading = false
+            result.onSuccess { roomCode ->
+                FirebaseRooms.saveLastRoomSession(context, roomCode, rememberedName)
+                onOpenRoom(roomCode)
+            }.onFailure {
+                error = it.localizedMessage ?: "Toernooiwedstrijd kon niet worden geopend."
+            }
+        }
+    }
+
     val avatarPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -433,13 +527,14 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties").forEachIndexed { index, label ->
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien").forEachIndexed { index, label ->
                 Tab(selected = selectedTab == index, onClick = {
                     selectedTab = index
                     if (index == 3 && !historyLoaded) loadMatchHistory()
                     if (index == 4 && !achievementsLoaded) loadAchievements()
+                    if (index == 5 && !tournamentsLoaded) loadTournaments()
                 }, text = {
-                    Text(label, fontSize = 9.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, fontSize = 8.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
             }
         }
@@ -633,7 +728,7 @@ internal fun CommunityScreen(
                     }
                 }
             }
-            else -> {
+            4 -> {
                 val unlockedCount = achievements.count { it.unlocked }
                 Text("PRESTATIES & TROFEEËN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 Text(
@@ -707,6 +802,167 @@ internal fun CommunityScreen(
                     }
                 }
             }
+            else -> {
+                val details = tournamentDetails
+                if (details == null) {
+                    Text("VRIENDENTOERNOOIEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                    Text("Organiseer een privétoernooi met vier of acht vrienden. Alleen bestaande vrienden kunnen met de code deelnemen.", color = CommunityMuted, fontSize = 11.sp)
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Text("NIEUW TOERNOOI", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            OutlinedTextField(
+                                value = tournamentTitle,
+                                onValueChange = { tournamentTitle = it.take(32) },
+                                label = { Text("Toernooinaam") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { tournamentCapacity = 4 },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(if (tournamentCapacity == 4) "✓ 4 spelers" else "4 spelers") }
+                                OutlinedButton(
+                                    onClick = { tournamentCapacity = 8 },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(if (tournamentCapacity == 8) "✓ 8 spelers" else "8 spelers") }
+                            }
+                            Button(
+                                onClick = { createTournamentNow() },
+                                enabled = !loading && tournamentTitle.trim().length >= 3,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Toernooi aanmaken") }
+                        }
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("MEEDOEN MET EEN CODE", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            OutlinedTextField(
+                                value = tournamentCodeInput,
+                                onValueChange = { tournamentCodeInput = it.trim().take(40) },
+                                label = { Text("Toernooicode van een vriend") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = { joinTournamentNow() },
+                                enabled = !loading && tournamentCodeInput.trim().length >= 10,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Deelnemen") }
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("MIJN TOERNOOIEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                        TextButton(onClick = { loadTournaments() }, enabled = !loading) {
+                            Text("Vernieuwen", color = CommunityGold)
+                        }
+                    }
+                    if (tournamentsLoaded && tournaments.isEmpty()) {
+                        Text("Je neemt nog niet deel aan toernooien.", color = CommunityMuted, fontSize = 12.sp)
+                    }
+                    tournaments.forEach { tournament ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                            shape = RoundedCornerShape(12.dp),
+                            onClick = { loadTournamentDetails(tournament.tournamentId) }
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(tournament.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "${tournament.participantCount} / ${tournament.capacity} spelers • ${tournamentStatusLabel(tournament.status)}",
+                                    color = CommunityMuted,
+                                    fontSize = 10.sp
+                                )
+                                Text("Open toernooi en bracket bekijken ›", color = CommunityGold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { tournamentDetails = null; loadTournaments() }) {
+                            Text("‹ Toernooien", color = CommunityGold)
+                        }
+                        TextButton(onClick = { loadTournamentDetails(details.tournament.tournamentId) }) {
+                            Text("Vernieuwen", color = CommunityGold)
+                        }
+                    }
+                    Text(details.tournament.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "${details.tournament.participantCount} / ${details.tournament.capacity} spelers • ${tournamentStatusLabel(details.tournament.status)}",
+                        color = CommunityMuted,
+                        fontSize = 11.sp
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Toernooicode: ${details.tournament.inviteCode}", color = CommunityGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = {
+                            val share = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Doe mee aan mijn Skip-Bo Masters-toernooi met code: ${details.tournament.inviteCode}")
+                            }
+                            context.startActivity(Intent.createChooser(share, "Deel toernooicode"))
+                        }) { Text("Delen") }
+                    }
+                    Text("DEELNEMERS", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                    details.tournament.participants.forEach { participant ->
+                        Text("• ${participant.displayName}", color = Color.White, fontSize = 12.sp)
+                    }
+                    Text("TOERNOOIBRACKET", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                    details.matches.forEach { match ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text(
+                                    "${tournamentRoundLabel(match.round, details.tournament.capacity)} • Wedstrijd ${match.slot + 1}",
+                                    color = CommunityGold,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(match.player1Name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text("tegen", color = CommunityMuted, fontSize = 9.sp)
+                                Text(match.player2Name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                if (!match.winnerName.isNullOrBlank()) {
+                                    Text("Winnaar: ${match.winnerName}", color = Color(0xFF9EE6B4), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                } else {
+                                    Text(tournamentMatchStatusLabel(match.status), color = CommunityMuted, fontSize = 10.sp)
+                                }
+                                if (match.canOpen) {
+                                    Button(
+                                        onClick = { openTournamentMatch(match) },
+                                        enabled = !loading,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text(if (match.status == "PLAYING") "Wedstrijd openen" else "Wedstrijd starten") }
+                                }
+                            }
+                        }
+                    }
+                    if (details.tournament.status == "COMPLETED" && details.tournament.winnerName != null) {
+                        Text("🏆 Toernooiwinnaar: ${details.tournament.winnerName}", color = CommunityGold, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
         }
         Text(
             "Wedstrijdscores worden alleen na een door de server bevestigde overwinning aangepast.",
@@ -732,3 +988,26 @@ private fun formatMatchDate(timestampMs: Long): String {
         Locale.getDefault()
     ).format(Date(timestampMs))
 }
+
+private fun tournamentStatusLabel(status: String): String = when (status) {
+    "OPEN" -> "Open • wacht op spelers"
+    "RUNNING" -> "Bezig"
+    "COMPLETED" -> "Afgerond"
+    else -> status
+}
+
+private fun tournamentRoundLabel(round: Int, capacity: Int): String = when {
+    round == 1 && capacity == 8 -> "Kwartfinale"
+    round == 1 -> "Halve finale"
+    round == 2 && capacity == 8 -> "Halve finale"
+    else -> "Finale"
+}
+
+private fun tournamentMatchStatusLabel(status: String): String = when (status) {
+    "WAITING_FOR_PLAYERS" -> "Wacht op winnaars uit vorige ronde"
+    "WAITING" -> "Klaar om te spelen"
+    "PLAYING" -> "Wedstrijd bezig"
+    "COMPLETED" -> "Afgerond"
+    else -> status
+}
+
