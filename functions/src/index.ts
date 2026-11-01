@@ -383,6 +383,73 @@ export const submitOnlineMove = onCall(async (request) => {
           achievementEntries.map((entry) => transaction.get(entry.ref))
         );
 
+        let tournamentRefForResult: DocumentReference | null = null;
+        let tournamentMatchRefForResult: DocumentReference | null = null;
+        let tournamentNextMatchRef: DocumentReference | null = null;
+        let tournamentNextMatchData: DocumentData | null = null;
+        let tournamentCurrentRound = 0;
+        let tournamentCurrentSlot = 0;
+        let tournamentIsFinal = false;
+
+        const hasTournamentMarker = typeof room.tournamentId === "string"
+          || typeof room.tournamentMatchId === "string";
+        if (hasTournamentMarker) {
+          if (typeof room.tournamentId !== "string" || typeof room.tournamentMatchId !== "string") {
+            throw new HttpsError("failed-precondition", "De toernooiwedstrijd is onvolledig gekoppeld.");
+          }
+          tournamentRefForResult = db.collection("tournaments").doc(room.tournamentId);
+          tournamentMatchRefForResult = db.collection("tournamentMatches").doc(room.tournamentMatchId);
+          const [tournamentSnap, tournamentMatchSnap] = await Promise.all([
+            transaction.get(tournamentRefForResult),
+            transaction.get(tournamentMatchRefForResult),
+          ]);
+          if (!tournamentSnap.exists || !tournamentMatchSnap.exists) {
+            throw new HttpsError("failed-precondition", "De toernooigegevens ontbreken; uitslag niet verwerkt.");
+          }
+          const tournamentData = tournamentSnap.data() ?? {};
+          const tournamentMatchData = tournamentMatchSnap.data() ?? {};
+          const matchPlayers = Array.isArray(tournamentMatchData.playerUids)
+            ? tournamentMatchData.playerUids
+            : [];
+          if (tournamentData.status !== "RUNNING"
+              || tournamentMatchData.tournamentId !== room.tournamentId
+              || tournamentMatchData.status !== "PLAYING"
+              || tournamentMatchData.roomCode !== code
+              || matchPlayers.length !== 2
+              || !matchPlayers.includes(winnerUid)
+              || !matchPlayers.includes(loserUid)) {
+            throw new HttpsError("failed-precondition", "De toernooiwedstrijd komt niet overeen met deze online kamer.");
+          }
+
+          tournamentCurrentRound = Number(tournamentMatchData.round);
+          tournamentCurrentSlot = Number(tournamentMatchData.slot);
+          const roundCount = Number(tournamentData.roundCount);
+          if (!Number.isSafeInteger(tournamentCurrentRound) || tournamentCurrentRound < 1
+              || !Number.isSafeInteger(tournamentCurrentSlot) || tournamentCurrentSlot < 0
+              || !Number.isSafeInteger(roundCount) || roundCount < 1) {
+            throw new HttpsError("failed-precondition", "De toernooibracket is ongeldig.");
+          }
+          tournamentIsFinal = tournamentCurrentRound === roundCount;
+          if (tournamentCurrentRound < roundCount) {
+            const rounds = Array.isArray(tournamentData.rounds) ? tournamentData.rounds : [];
+            const nextRound = rounds.find((item: { round?: number }) => Number(item.round) === tournamentCurrentRound + 1);
+            const nextSlot = Math.floor(tournamentCurrentSlot / 2);
+            const nextMatchId = Array.isArray(nextRound?.matchIds) ? nextRound.matchIds[nextSlot] : null;
+            if (typeof nextMatchId !== "string" || !/^[A-Za-z0-9]{15,40}$/.test(nextMatchId)) {
+              throw new HttpsError("failed-precondition", "De volgende toernooiwedstrijd ontbreekt.");
+            }
+            tournamentNextMatchRef = db.collection("tournamentMatches").doc(nextMatchId);
+            const nextMatchSnap = await transaction.get(tournamentNextMatchRef);
+            if (!nextMatchSnap.exists) {
+              throw new HttpsError("failed-precondition", "De volgende toernooiwedstrijd bestaat niet.");
+            }
+            tournamentNextMatchData = nextMatchSnap.data() ?? {};
+            if (tournamentNextMatchData.status !== "WAITING_FOR_PLAYERS") {
+              throw new HttpsError("aborted", "De volgende ronde is al bijgewerkt.");
+            }
+          }
+        }
+
         transaction.create(resultRef, {
           matchId: code, winnerUid, loserUid, winnerName, loserName,
           ratingChange: winnerDelta, createdAt: FieldValue.serverTimestamp(),
@@ -432,6 +499,39 @@ export const submitOnlineMove = onCall(async (request) => {
           const ownerUid = winnerAchievementRefs.includes(entry) ? winnerUid : loserUid;
           if (ownerUid === uid) unlockedAchievements.push(entry.achievement.id);
         });
+
+        if (tournamentMatchRefForResult && tournamentRefForResult) {
+          transaction.update(tournamentMatchRefForResult, {
+            status: "COMPLETED",
+            winnerUid,
+            completedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          if (tournamentIsFinal) {
+            transaction.update(tournamentRefForResult, {
+              status: "COMPLETED",
+              winnerUid,
+              completedAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          } else if (tournamentNextMatchRef && tournamentNextMatchData) {
+            const nextPlayer1Uid = tournamentCurrentSlot % 2 === 0
+              ? winnerUid
+              : (typeof tournamentNextMatchData.player1Uid === "string" ? tournamentNextMatchData.player1Uid : null);
+            const nextPlayer2Uid = tournamentCurrentSlot % 2 === 1
+              ? winnerUid
+              : (typeof tournamentNextMatchData.player2Uid === "string" ? tournamentNextMatchData.player2Uid : null);
+            const nextPlayers = [nextPlayer1Uid, nextPlayer2Uid].filter((value): value is string => typeof value === "string");
+            transaction.update(tournamentNextMatchRef, {
+              player1Uid: nextPlayer1Uid,
+              player2Uid: nextPlayer2Uid,
+              playerUids: nextPlayers,
+              status: nextPlayers.length === 2 ? "WAITING" : "WAITING_FOR_PLAYERS",
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        }
       }
     }
 
