@@ -209,6 +209,7 @@ test("daily login streak increments only on consecutive UTC dates", () => {
   assert.equal(nextDailyStreak("2026-10-31", "2026-11-01", 6), 7);
   assert.equal(nextDailyStreak("2026-10-30", "2026-11-01", 4), 1);
   assert.equal(nextDailyStreak("2026-11-01", "2026-11-01", 7), 0);
-  assert.throws(() => nextDailyStreak("yesterday", "today", 1));
+  assert.equal(nextDailyStreak("invalid-old-date", "2026-11-01", 4), 1);
+  assert.throws(() => nextDailyStreak("2026-11-01", "today", 1));
 });
 
