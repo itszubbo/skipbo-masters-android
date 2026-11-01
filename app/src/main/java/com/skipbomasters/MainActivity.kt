@@ -16,10 +16,14 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -508,7 +512,12 @@ internal fun GameScreen(
         Text("HAND • ${displayPlayer.name.uppercase()}  •  SPEEL EEN KAART", color = Color(0xFFC7D8CE), fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.sp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(displayPlayer.hand) { i, c ->
-                PlayingCard(c, selected = false, modifier = Modifier.width(55.dp).height(78.dp)) {
+                PlayingCard(
+                    c,
+                    selected = false,
+                    modifier = Modifier.width(55.dp).height(78.dp),
+                    goldenTheme = activeCardTheme == "royal_gold"
+                ) {
                     if (canPlayTurn && !g.finished) {
                         if (onOnlinePlay != null) { onOnlinePlay("hand", i); playUiSound() }
                         else { if (g.play(c, "hand", i)) playUiSound(); onChanged() }
@@ -642,9 +651,24 @@ private fun PileCard(main: String, sub: String, bg: Color, modifier: Modifier = 
     }
 }
 @Composable
-private fun PlayingCard(card: Card, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun PlayingCard(
+    card: Card,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    goldenTheme: Boolean = false,
+    onClick: () -> Unit
+) {
     val bg = if (card.joker) Color(0xFFFFD34E) else Color.White
     val fg = if (card.joker) Color(0xFFB51F2A) else when (card.value % 3) { 0 -> Color(0xFF174C35); 1 -> Color(0xFFB51F2A); else -> Color(0xFF174C35) }
+    val goldGlow by rememberInfiniteTransition(label = "gold-card-glow").animateFloat(
+        initialValue = 5f,
+        targetValue = 11f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "gold-card-glow-level"
+    )
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val cardScale by animateFloatAsState(
@@ -654,8 +678,9 @@ private fun PlayingCard(card: Card, selected: Boolean, modifier: Modifier = Modi
     )
     Column(
         modifier.graphicsLayer { scaleX = cardScale; scaleY = cardScale }
-            .shadow(5.dp, RoundedCornerShape(10.dp))
+            .shadow(if (goldenTheme) goldGlow.dp else 5.dp, RoundedCornerShape(10.dp))
             .background(bg, RoundedCornerShape(10.dp))
+            .then(if (goldenTheme) Modifier.border(BorderStroke(1.5.dp, Color(0xFFFFD34E)), RoundedCornerShape(10.dp)) else Modifier)
             .clickable(interactionSource = interactionSource, indication = null) { onClick() }
             .padding(5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
