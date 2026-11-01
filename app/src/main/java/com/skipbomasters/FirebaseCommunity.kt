@@ -40,6 +40,14 @@ internal data class CommunityOverview(
     val gameInvites: List<GameInviteItem>
 )
 
+internal data class MatchHistoryItem(
+    val matchId: String,
+    val opponentName: String,
+    val won: Boolean,
+    val ratingChange: Int,
+    val playedAtMs: Long
+)
+
 internal data class LeaderboardCursor(val rating: Int, val uid: String)
 internal data class LeaderboardPage(
     val players: List<CommunityPlayer>,
@@ -113,6 +121,27 @@ internal object FirebaseCommunity {
             callback(result.mapCatching { data ->
                 val code = data.asMap()["roomCode"] as? String
                 code?.takeIf { it.isNotBlank() }
+            })
+        }
+    }
+
+    fun loadMatchHistory(
+        context: Context,
+        callback: (Result<List<MatchHistoryItem>>) -> Unit
+    ) {
+        FirebaseRooms.callFunction(context, "getMyMatchHistory", mapOf("pageSize" to 20)) { result ->
+            callback(result.mapCatching { data ->
+                val root = data.asMap()
+                root.list("matches").map { item ->
+                    val map = item.asMap()
+                    MatchHistoryItem(
+                        matchId = map.string("matchId"),
+                        opponentName = map.string("opponentName", "Speler"),
+                        won = map["won"] as? Boolean ?: false,
+                        ratingChange = map.int("ratingChange"),
+                        playedAtMs = (map["playedAtMs"] as? Number)?.toLong() ?: 0L
+                    )
+                }
             })
         }
     }
