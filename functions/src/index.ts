@@ -4,7 +4,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
+import { buildPlayerMatchHistory, getAchievementProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -305,6 +305,9 @@ export const submitOnlineMove = onCall(async (request) => {
     state.drawCount = deck.length;
     updatePublicStock(state, privatePlayers);
 
+    // New trophies returned only to the player who made the winning move.
+    let unlockedAchievements: string[] = [];
+
     // Record the final result and update ratings exactly once, inside the same
     // server transaction that commits the winning move.
     if (state.finished) {
@@ -344,6 +347,37 @@ export const submitOnlineMove = onCall(async (request) => {
         const winnerMatches = Number(winnerData.matchesPlayed ?? 0) + 1;
         const loserLosses = Number(loserData.losses ?? 0) + 1;
         const loserMatches = Number(loserData.matchesPlayed ?? 0) + 1;
+        const winnerWinStreak = Math.max(0, Number(winnerData.winStreak ?? 0)) + 1;
+        const loserWinStreak = 0;
+
+        // Determine eligible trophies from the post-match server statistics.
+        const winnerEligible = getAchievementProgress({
+          wins: winnerWins,
+          matchesPlayed: winnerMatches,
+          winStreak: winnerWinStreak,
+          rating: newWinnerRating,
+        }).filter((achievement) => achievement.unlocked);
+        const loserEligible = getAchievementProgress({
+          wins: Number(loserData.wins ?? 0),
+          matchesPlayed: loserMatches,
+          winStreak: loserWinStreak,
+          rating: newLoserRating,
+        }).filter((achievement) => achievement.unlocked);
+
+        const winnerAchievementRefs = winnerEligible.map((achievement) => ({
+          achievement,
+          ref: winnerProfileRef.collection("achievements").doc(achievement.id),
+        }));
+        const loserAchievementRefs = loserEligible.map((achievement) => ({
+          achievement,
+          ref: loserProfileRef.collection("achievements").doc(achievement.id),
+        }));
+
+        // Read every trophy document before the first write in this transaction.
+        const achievementEntries = [...winnerAchievementRefs, ...loserAchievementRefs];
+        const achievementSnapshots = await Promise.all(
+          achievementEntries.map((entry) => transaction.get(entry.ref))
+        );
 
         transaction.create(resultRef, {
           matchId: code, winnerUid, loserUid, winnerName, loserName,
@@ -352,13 +386,13 @@ export const submitOnlineMove = onCall(async (request) => {
         transaction.set(winnerProfileRef, {
           ...initialProfile(winnerUid, winnerName), ...winnerData,
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
-          wins: winnerWins, matchesPlayed: winnerMatches,
+          wins: winnerWins, matchesPlayed: winnerMatches, winStreak: winnerWinStreak,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(loserProfileRef, {
           ...initialProfile(loserUid, loserName), ...loserData,
           uid: loserUid, displayName: loserName, rating: newLoserRating,
-          losses: loserLosses, matchesPlayed: loserMatches,
+          losses: loserLosses, matchesPlayed: loserMatches, winStreak: loserWinStreak,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(winnerPublicRef, {
@@ -381,6 +415,19 @@ export const submitOnlineMove = onCall(async (request) => {
           matchesPlayed: loserMatches, provisional: loserMatches < 10,
           updatedAt: FieldValue.serverTimestamp(),
         });
+
+        achievementEntries.forEach((entry, index) => {
+          if (achievementSnapshots[index].exists) return;
+          transaction.create(entry.ref, {
+            id: entry.achievement.id,
+            title: entry.achievement.title,
+            description: entry.achievement.description,
+            category: entry.achievement.category,
+            unlockedAt: FieldValue.serverTimestamp(),
+          });
+          const ownerUid = winnerAchievementRefs.includes(entry) ? winnerUid : loserUid;
+          if (ownerUid === uid) unlockedAchievements.push(entry.achievement.id);
+        });
       }
     }
 
@@ -400,7 +447,7 @@ export const submitOnlineMove = onCall(async (request) => {
       });
     }
     if (state.finished) transaction.update(refs.roomRef, { status: "FINISHED", updatedAt: FieldValue.serverTimestamp() });
-    return { revision: nextRevision, payload, privatePlayer: { hand: active.hand } };
+    return { revision: nextRevision, payload, privatePlayer: { hand: active.hand }, unlockedAchievements };
   });
 });
 
