@@ -42,6 +42,19 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class Card(val value: Int) { val joker get() = value == 0 }
+
+internal enum class AiDifficulty(val title: String, val description: String) {
+    EASY("Makkelijk", "De computer speelt minder efficiënt en gebruikt vaker aflegkaarten."),
+    NORMAL("Normaal", "Een gebalanceerde tegenstander die voorraad en handkaarten benut."),
+    HARD("Moeilijk", "De computer bewaart jokers en zoekt zetten die direct vervolgzetten openen.")
+}
+
+private data class ComputerMove(
+    val source: String,
+    val index: Int,
+    val card: Card,
+    val score: Int
+)
 internal data class Player(
     var name: String,
     val stock: MutableList<Card>,
@@ -53,7 +66,7 @@ internal data class Player(
     val stockCount: Int get() = publicStockCount ?: stock.size
     val stockTop: Card? get() = publicStockTop ?: stock.lastOrNull()
 }
-internal class Game(val vsComputer: Boolean) {
+internal class Game(val vsComputer: Boolean, val difficulty: AiDifficulty = AiDifficulty.NORMAL) {
     val draw = mutableListOf<Card>()
     // Completed building piles are set aside until the draw pile is empty.
     val completed = mutableListOf<Card>()
@@ -228,27 +241,80 @@ internal class Game(val vsComputer: Boolean) {
         nextTurn(refillNextPlayer)
     }
     fun label(c: Card) = if (c.joker) "Skip-Bo" else c.value.toString()
+
+    private fun exposesPlayableDiscard(discardIndex: Int, playedCard: Card): Boolean {
+        val pile = players[1].discards[discardIndex]
+        val exposed = pile.getOrNull(pile.lastIndex - 1) ?: return false
+        val targetBuild = builds.indexOfFirst { it.size < 12 && canPlay(playedCard, it) }
+        if (targetBuild < 0) return false
+        return builds.indices.any { buildIndex ->
+            var resultingSize = builds[buildIndex].size
+            if (buildIndex == targetBuild) {
+                resultingSize += 1
+                if (resultingSize == 12) resultingSize = 0
+            }
+            resultingSize < 12 && (exposed.joker || exposed.value == resultingSize + 1)
+        }
+    }
+
+    private fun scoreComputerMove(source: String, index: Int, card: Card): Int {
+        if (source == "stock") return 10_000
+        val targetBuild = builds.indexOfFirst { it.size < 12 && canPlay(card, it) }
+        val completesBuild = targetBuild >= 0 && builds[targetBuild].size == 11
+        return when (difficulty) {
+            AiDifficulty.EASY -> when (source) {
+                "discard" -> 600 - index
+                else -> 300 - index
+            }
+            AiDifficulty.NORMAL -> when (source) {
+                "hand" -> 600 - index
+                else -> 300 - index
+            }
+            AiDifficulty.HARD -> {
+                val sourceBonus = if (source == "hand") 360 else 240
+                val naturalCardBonus = if (card.joker) 0 else 100
+                val jokerPenalty = if (card.joker) 150 else 0
+                val completionBonus = if (completesBuild) 80 else 0
+                val chainBonus = if (source == "discard" && exposesPlayableDiscard(index, card)) 260 else 0
+                val refillBonus = if (source == "hand" && players[1].hand.size == 1) 70 else 0
+                sourceBonus + naturalCardBonus - jokerPenalty + completionBonus + chainBonus + refillBonus - index
+            }
+        }
+    }
+
     fun computerTurn() {
         val p = players[1]
         refillHand(p)
         var safety = 0
         while (!finished && safety++ < 100) {
-            var moved = false
+            val moves = mutableListOf<ComputerMove>()
             val stock = topStock(p)
-            if (stock != null && play(stock, "stock")) { moved = true; continue }
-            for (i in p.hand.indices.toList()) {
-                if (play(p.hand[i], "hand", i)) { moved = true; break }
+            if (stock != null && builds.any { it.size < 12 && canPlay(stock, it) }) {
+                moves.add(ComputerMove("stock", -1, stock, scoreComputerMove("stock", -1, stock)))
             }
-            if (moved) continue
-            for (d in 0..3) {
-                val c = topDiscard(p, d)
-                if (c != null && play(c, "discard", d)) { moved = true; break }
+            p.hand.forEachIndexed { index, card ->
+                if (builds.any { it.size < 12 && canPlay(card, it) }) {
+                    moves.add(ComputerMove("hand", index, card, scoreComputerMove("hand", index, card)))
+                }
             }
-            if (!moved) break
+            p.discards.forEachIndexed { index, pile ->
+                val card = pile.lastOrNull()
+                if (card != null && builds.any { it.size < 12 && canPlay(card, it) }) {
+                    moves.add(ComputerMove("discard", index, card, scoreComputerMove("discard", index, card)))
+                }
+            }
+            val chosen = moves.maxByOrNull { it.score } ?: break
+            if (!play(chosen.card, chosen.source, chosen.index)) break
         }
         if (!finished) {
             if (p.hand.isNotEmpty()) {
-                val idx = p.hand.indices.maxByOrNull { p.hand[it].value } ?: 0
+                val idx = when (difficulty) {
+                    AiDifficulty.EASY -> p.hand.indices.first()
+                    AiDifficulty.NORMAL -> p.hand.indices.maxByOrNull { p.hand[it].value } ?: 0
+                    AiDifficulty.HARD -> p.hand.indices.maxByOrNull {
+                        if (p.hand[it].joker) Int.MIN_VALUE else p.hand[it].value
+                    } ?: 0
+                }
                 p.discards.first().add(p.hand.removeAt(idx))
             }
             nextTurn()
@@ -267,6 +333,7 @@ class MainActivity : ComponentActivity() {
 private fun SkipBoApp() {
     var game by remember { mutableStateOf<Game?>(null) }
     var mode by remember { mutableStateOf(true) }
+    var aiDifficulty by remember { mutableStateOf(AiDifficulty.NORMAL) }
     var showOnline by remember { mutableStateOf(false) }
     var showCommunity by remember { mutableStateOf(false) }
     var pendingRoomCode by remember { mutableStateOf<String?>(null) }
@@ -299,7 +366,27 @@ private fun SkipBoApp() {
                     Spacer(Modifier.height(28.dp))
                     Text("Kies je spelmodus", color = Color.White, fontSize = 20.sp)
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { mode = true; game = Game(true) }, modifier = Modifier.fillMaxWidth()) { Text("Tegen de computer") }
+                    Text("MOEILIJKHEID COMPUTER", color = Color(0xFFFFD34E), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        AiDifficulty.values().forEach { level ->
+                            if (aiDifficulty == level) {
+                                Button(
+                                    onClick = { aiDifficulty = level },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                                ) { Text(level.title, fontSize = 11.sp) }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { aiDifficulty = level },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                                ) { Text(level.title, color = Color.White, fontSize = 11.sp) }
+                            }
+                        }
+                    }
+                    Text(aiDifficulty.description, color = Color(0xFFB8CFC3), fontSize = 11.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Button(onClick = { mode = true; game = Game(true, aiDifficulty) }, modifier = Modifier.fillMaxWidth()) { Text("Tegen de computer") }
                     Button(onClick = { mode = false; game = Game(false) }, modifier = Modifier.fillMaxWidth()) { Text("Twee spelers op één telefoon") }
                     OutlinedButton(onClick = { showOnline = true }, modifier = Modifier.fillMaxWidth()) { Text("Online spelen", color = Color(0xFFFFD34E)) }
                     OutlinedButton(onClick = { showCommunity = true }, modifier = Modifier.fillMaxWidth()) { Text("Vrienden & ranglijst", color = Color(0xFFFFD34E)) }
