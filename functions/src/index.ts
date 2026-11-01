@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -130,7 +130,7 @@ const cleanDisplayName = (value: unknown, fallback = "Skip-Bo speler") => {
 const friendRequestId = (a: string, b: string) =>
   createHash("sha256").update([a, b].sort().join(":")).digest("hex");
 const initialProfile = (uid: string, displayName: string) => ({
-  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [],
+  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [], activeCardTheme: "classic",
   createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
 });
 
@@ -924,6 +924,7 @@ export const getCommunityOverview = onCall(async (request) => {
       xp: Number(me.xp ?? 0),
       level: getLevelProgress(Number(me.xp ?? 0)).level,
       unlockedCosmetics: Array.isArray(me.unlockedCosmetics) ? me.unlockedCosmetics : [],
+      activeCardTheme: typeof me.activeCardTheme === "string" ? me.activeCardTheme : "classic",
       avatarPath: typeof me.avatarPath === "string" ? me.avatarPath : null,
     },
     friends: friendUids.map(publicPlayer),
@@ -936,6 +937,33 @@ export const getCommunityOverview = onCall(async (request) => {
       from: publicPlayer(String(doc.get("fromUid") ?? "")),
     })),
   };
+});
+
+});
+
+/** Change the caller's equipped card back after checking the server-owned level unlock. */
+export const setActiveCardTheme = onCall(async (request) => {
+  const uid = requireUid(request);
+  const themeId = String(request.data?.themeId ?? "");
+  const profileRef = db.doc(`profiles/${uid}`);
+
+  return db.runTransaction(async (transaction) => {
+    const profileSnap = await transaction.get(profileRef);
+    if (!profileSnap.exists) {
+      throw new HttpsError("failed-precondition", "Je spelersprofiel is nog niet aangemaakt.");
+    }
+    const profile = profileSnap.data() ?? {};
+    const xp = Math.max(0, Number(profile.xp ?? 0));
+    const level = getLevelProgress(xp).level;
+    if (!isCardThemeUnlocked(themeId, level)) {
+      throw new HttpsError("failed-precondition", "Deze kaartstijl is nog niet vrijgespeeld.");
+    }
+    transaction.update(profileRef, {
+      activeCardTheme: themeId,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { activeCardTheme: themeId, level };
+  });
 });
 
 export const getLeaderboardPage = onCall(async (request) => {
