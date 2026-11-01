@@ -788,6 +788,7 @@ export const getCommunityOverview = onCall(async (request) => {
       uid, displayName: cleanDisplayName(me.displayName), friendCode: String(me.friendCode ?? ""),
       rating: Number(me.rating ?? 1000), wins: Number(me.wins ?? 0), losses: Number(me.losses ?? 0),
       matchesPlayed: Number(me.matchesPlayed ?? 0),
+      avatarPath: typeof me.avatarPath === "string" ? me.avatarPath : null,
     },
     friends: friendUids.map(publicPlayer),
     friendRequests: requestsSnap.docs.map(doc => ({
