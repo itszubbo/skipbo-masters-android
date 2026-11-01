@@ -149,3 +149,66 @@ test("tournament brackets reject invalid sizes and duplicate identities", () => 
   assert.throws(() => buildTournamentBracket(["a", "b", "c", ""]));
 });
 
+test("daily missions advance only from confirmed match counters and award XP once", () => {
+  const { updateDailyMissionProgress, getDailyMissionProgress } = require("../lib/communityRules.js");
+  const first = updateDailyMissionProgress({}, true);
+  assert.equal(first.matchesPlayed, 1);
+  assert.equal(first.wins, 1);
+  assert.deepEqual(new Set(first.newlyCompleted), new Set(["play_one_match", "win_one_match"]));
+  assert.equal(first.xpAwarded, 80);
+
+  const second = updateDailyMissionProgress({
+    matchesPlayed: first.matchesPlayed,
+    wins: first.wins,
+    completedMissionIds: first.completedMissionIds
+  }, false);
+  assert.equal(second.matchesPlayed, 2);
+  assert.equal(second.xpAwarded, 0);
+
+  const third = updateDailyMissionProgress({
+    matchesPlayed: second.matchesPlayed,
+    wins: second.wins,
+    completedMissionIds: second.completedMissionIds
+  }, false);
+  assert.equal(third.matchesPlayed, 3);
+  assert.equal(third.xpAwarded, 70);
+  assert.ok(getDailyMissionProgress(
+    third.matchesPlayed,
+    third.wins,
+    new Set(third.completedMissionIds)
+  ).every(mission => mission.completed || mission.id === "win_one_match"));
+});
+
+test("daily mission progress caps at targets and never creates duplicate completion rewards", () => {
+  const { updateDailyMissionProgress } = require("../lib/communityRules.js");
+  const existing = {
+    matchesPlayed: 8,
+    wins: 5,
+    completedMissionIds: ["play_one_match", "win_one_match", "play_three_matches"]
+  };
+  const next = updateDailyMissionProgress(existing, true);
+  assert.equal(next.xpAwarded, 0);
+  assert.deepEqual(next.newlyCompleted, []);
+  assert.equal(next.matchesPlayed, 9);
+});
+
+test("XP levels advance every 500 points", () => {
+  const { getLevelProgress } = require("../lib/communityRules.js");
+  assert.deepEqual(getLevelProgress(0), {
+    level: 1, xp: 0, xpIntoLevel: 0, xpForNextLevel: 500
+  });
+  assert.deepEqual(getLevelProgress(1249), {
+    level: 3, xp: 1249, xpIntoLevel: 249, xpForNextLevel: 500
+  });
+  assert.equal(getLevelProgress(-40).level, 1);
+});
+
+test("daily login streak increments only on consecutive UTC dates", () => {
+  const { nextDailyStreak } = require("../lib/communityRules.js");
+  assert.equal(nextDailyStreak(null, "2026-11-01", 0), 1);
+  assert.equal(nextDailyStreak("2026-10-31", "2026-11-01", 6), 7);
+  assert.equal(nextDailyStreak("2026-10-30", "2026-11-01", 4), 1);
+  assert.equal(nextDailyStreak("2026-11-01", "2026-11-01", 7), 0);
+  assert.throws(() => nextDailyStreak("yesterday", "today", 1));
+});
+
