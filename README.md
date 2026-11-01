@@ -475,3 +475,52 @@ Er zijn voor v17 geen nieuwe samengestelde Firestore-indexen nodig. Een bestaand
 - Toernooiwedstrijden zijn online tweespelerpotjes; de Android-app moet op beide toestellen zijn geïnstalleerd en de Cloud Functions moeten zijn uitgerold.
 - Volledige Firebase Emulator Suite- en fysieke tweetoestellentests blijven nodig.
 
+## v18 — dagelijkse uitdagingen, dagbeloning en spelersniveaus
+
+### Dagelijkse uitdagingen
+- Nieuw tabblad **Dagelijks** in het communityscherm.
+- Drie dagelijkse online missies:
+  - Speel één online wedstrijd: 30 XP.
+  - Win één online wedstrijd: 50 XP.
+  - Speel drie online wedstrijden: 70 XP.
+- Alleen door de server bevestigde online uitslagen verhogen de missievoortgang.
+- Iedere missie betaalt XP slechts één keer per UTC-dag uit.
+- De dagstatus wordt opgeslagen per spelersaccount en UTC-datum; de voortgang start automatisch opnieuw op een nieuwe datum.
+- Lokale potjes tegen de computer tellen niet mee voor de online communitymissies.
+
+### Dagelijkse inlogbeloning
+- Een afzonderlijke actie **Dagbeloning ophalen** levert 25 XP op.
+- Een servertransactie staat maximaal één claim per speler per UTC-dag toe; herhaalde of gelijktijdige claims leveren geen extra XP op.
+- De inlogreeks loopt alleen door bij opeenvolgende UTC-dagen en wordt na een gemiste dag opnieuw gestart.
+- Na zeven opeenvolgende dagclaims wordt de cosmetische **smaragdgroene profielrand** vrijgespeeld.
+- De vrijgespeelde profielrand wordt op de avatar in de profielpagina getoond.
+
+### XP en niveaus
+- XP wordt uitsluitend door Cloud Functions aan het spelersprofiel toegevoegd.
+- Elke 500 XP verhoogt het spelersniveau met één.
+- XP uit missies wordt in dezelfde Firestore-transactie verwerkt als de serverbevestigde online wedstrijduitslag.
+- De dagbeloning en cosmetische unlock worden transactioneel en idempotent vastgelegd.
+
+### Nieuwe Cloud Functions
+- `getDailyProgress` — retourneert de huidige UTC-missies, XP-voortgang en dagclaimstatus van de ingelogde speler.
+- `claimDailyReward` — verwerkt de dagelijkse beloning, streak en cosmetische unlock.
+
+### Firebase uitrollen
+Voer vanuit de projectroot uit:
+```bash
+firebase deploy --only functions
+```
+Voor v18 zijn geen nieuwe Firestore-indexen of Storage-regels nodig. De bestaande Firestore-regels blokkeren directe clientwrites naar profielgegevens; dagelijkse voortgang en beloningen worden uitsluitend via Cloud Functions bijgewerkt.
+
+### Dagreset
+De server gebruikt UTC als vaste daggrens (00:00 UTC). De dagreset valt daardoor niet samen met het lokale middernachtuur in iedere tijdzone.
+
+### Versie
+- Android `versionCode`: 18
+- Android `versionName`: 0.18.0
+
+### Nog te testen
+- Firebase Emulator- en end-to-endtests voor gelijktijdige dagclaims en missie-updates.
+- Fysieke toesteltest van de dagelijkse claim, het niveau en de avatar-rand.
+- De functies moeten naar het eigen Firebase-project worden uitgerold voordat de live uitdagingen en beloningen werken.
+
