@@ -19,7 +19,8 @@ internal data class CommunityProfile(
     val avatarPath: String? = null,
     val xp: Int = 0,
     val level: Int = 1,
-    val unlockedCosmetics: List<String> = emptyList()
+    val unlockedCosmetics: List<String> = emptyList(),
+    val activeCardTheme: String = "classic"
 )
 
 internal data class CommunityPlayer(
@@ -156,6 +157,14 @@ internal object FirebaseCommunity {
                 },
                 onFailure = { callback(Result.failure(it)) }
             )
+        }
+    }
+
+    fun setActiveCardTheme(context: Context, themeId: String, callback: (Result<String>) -> Unit) {
+        FirebaseRooms.callFunction(
+            context, "setActiveCardTheme", mapOf("themeId" to themeId)
+        ) { result ->
+            callback(result.mapCatching { data -> data.asMap().string("activeCardTheme", "classic") })
         }
     }
 
@@ -491,7 +500,8 @@ internal object FirebaseCommunity {
                 avatarPath = me["avatarPath"] as? String,
                 xp = me.int("xp"),
                 level = me.int("level", 1),
-                unlockedCosmetics = me.list("unlockedCosmetics").mapNotNull { it as? String }
+                unlockedCosmetics = me.list("unlockedCosmetics").mapNotNull { it as? String },
+                activeCardTheme = me.string("activeCardTheme", "classic")
             ),
             friends = root.list("friends").map { parsePlayer(it) },
             friendRequests = root.list("friendRequests").map { item ->
