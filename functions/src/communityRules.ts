@@ -351,3 +351,42 @@ export function isCardThemeUnlocked(themeId: string, level: number): boolean {
   }
   return level >= CARD_THEME_LEVELS[themeId as CardThemeId];
 }
+
+
+export type SeasonProgressUpdate = {
+  matchesPlayed: number;
+  wins: number;
+  rewardClaimed: boolean;
+  rewardUnlocked: boolean;
+  xpAwarded: number;
+};
+
+/** Advance the current UTC season only from a server-confirmed match result. */
+export function updateSeasonProgress(
+  existing: { matchesPlayed?: unknown; wins?: unknown; rewardClaimed?: unknown },
+  playerWon: boolean,
+  rewardTarget = 10,
+  rewardXp = 150
+): SeasonProgressUpdate {
+  if (!Number.isSafeInteger(rewardTarget) || rewardTarget < 1
+      || !Number.isSafeInteger(rewardXp) || rewardXp < 0) {
+    throw new Error("Invalid season reward configuration.");
+  }
+  const previousMatches = Number(existing.matchesPlayed ?? 0);
+  const previousWins = Number(existing.wins ?? 0);
+  const matchesPlayed = (Number.isSafeInteger(previousMatches) && previousMatches >= 0 ? previousMatches : 0) + 1;
+  const wins = (Number.isSafeInteger(previousWins) && previousWins >= 0 ? previousWins : 0) + (playerWon ? 1 : 0);
+  const alreadyClaimed = existing.rewardClaimed === true;
+  const rewardUnlocked = !alreadyClaimed && matchesPlayed >= rewardTarget;
+  return {
+    matchesPlayed,
+    wins,
+    rewardClaimed: alreadyClaimed || rewardUnlocked,
+    rewardUnlocked,
+    xpAwarded: rewardUnlocked ? rewardXp : 0,
+  };
+}
+
+export function isValidAchievementBadgeId(value: string): boolean {
+  return /^[a-z0-9_]{1,40}$/.test(value);
+}
