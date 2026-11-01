@@ -62,11 +62,29 @@ private val CommunityGold = Color(0xFFFFD34E)
 private val CommunityMuted = Color(0xFFB8CFC3)
 private val CommunityPanel = Color(0xFF15382F)
 
+private data class CardThemeOption(
+    val id: String,
+    val title: String,
+    val description: String,
+    val requiredLevel: Int,
+    val background: Color,
+    val foreground: Color,
+    val symbol: String
+)
+
+private val CardThemeOptions = listOf(
+    CardThemeOption("classic", "Klassiek", "De vertrouwde rode kaartachterkant.", 1, Color(0xFFB51F2A), Color.White, "♠"),
+    CardThemeOption("emerald", "Smaragd", "Donkergroen met een gouden accent.", 2, Color(0xFF174C35), CommunityGold, "✦"),
+    CardThemeOption("royal_gold", "Koninklijk goud", "Een luxe gouden kaartstijl.", 4, Color(0xFFFFD34E), Color(0xFF43320C), "♛"),
+    CardThemeOption("midnight", "Middernacht", "Nachtblauw met een lichte glans.", 7, Color(0xFF282640), Color(0xFFE3D8FF), "✧")
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CommunityScreen(
     onBack: () -> Unit,
-    onOpenRoom: (String) -> Unit
+    onOpenRoom: (String) -> Unit,
+    onCardThemeChanged: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -120,6 +138,7 @@ internal fun CommunityScreen(
             loading = false
             result.onSuccess {
                 overview = it
+                onCardThemeChanged(it.profile.activeCardTheme)
                 displayName = it.profile.displayName
                 loadAvatar(it.profile.avatarPath)
                 val user = runCatching { FirebaseAuth.getInstance().currentUser }.getOrNull()
@@ -576,7 +595,7 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien", "Dagelijks").forEachIndexed { index, label ->
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien", "Dagelijks", "Kaartstijl").forEachIndexed { index, label ->
                 Tab(selected = selectedTab == index, onClick = {
                     selectedTab = index
                     if (index == 3 && !historyLoaded) loadMatchHistory()
@@ -584,7 +603,7 @@ internal fun CommunityScreen(
                     if (index == 5 && !tournamentsLoaded) loadTournaments()
                     if (index == 6 && !dailyLoaded) loadDailyProgress()
                 }, text = {
-                    Text(label, fontSize = 8.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, fontSize = 7.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
             }
         }
@@ -1010,6 +1029,86 @@ internal fun CommunityScreen(
                     }
                     if (details.tournament.status == "COMPLETED" && details.tournament.winnerName != null) {
                         Text("🏆 Toernooiwinnaar: ${details.tournament.winnerName}", color = CommunityGold, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+            7 -> {
+                Text("VRIJSPEELBARE KAARTSTIJLEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                Text(
+                    "Verdien XP met online uitdagingen en wedstrijden om nieuwe achterkanten voor je trekstapel vrij te spelen.",
+                    color = CommunityMuted,
+                    fontSize = 11.sp
+                )
+                val profile = overview?.profile
+                if (profile == null) {
+                    Text("Je profiel wordt geladen. Open dit tabblad zodra je profiel beschikbaar is.", color = CommunityMuted, fontSize = 12.sp)
+                } else {
+                    Text("HUIDIGE STIJL: ${CardThemeOptions.firstOrNull { it.id == profile.activeCardTheme }?.title ?: "Klassiek"}", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    CardThemeOptions.forEach { theme ->
+                        val unlocked = profile.level >= theme.requiredLevel
+                        val active = profile.activeCardTheme == theme.id
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (active) Color(0xFF1B4837) else CommunityPanel
+                            ),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Card(
+                                    modifier = Modifier.size(width = 64.dp, height = 82.dp),
+                                    colors = CardDefaults.cardColors(containerColor = theme.background),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Column(
+                                        Modifier.fillMaxSize().padding(4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(theme.symbol, color = theme.foreground, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                                        Text("SKIP-BO", color = theme.foreground, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                                        Text("MASTERS", color = theme.foreground, fontSize = 6.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(theme.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text(theme.description, color = CommunityMuted, fontSize = 10.sp)
+                                    Text(
+                                        if (unlocked) "Vrijgespeeld" else "Vrij vanaf niveau ${theme.requiredLevel} • nog ${maxOf(0, (theme.requiredLevel - 1) * 500 - profile.xp)} XP",
+                                        color = if (unlocked) Color(0xFF9EE6B4) else CommunityMuted,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (active) {
+                                        Text("ACTIEF IN JE SPEL", color = CommunityGold, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                    } else if (unlocked) {
+                                        OutlinedButton(
+                                            enabled = !loading,
+                                            onClick = {
+                                                loading = true
+                                                error = ""
+                                                FirebaseCommunity.setActiveCardTheme(context, theme.id) { result ->
+                                                    loading = false
+                                                    result.onSuccess { selected ->
+                                                        overview = overview?.copy(
+                                                            profile = profile.copy(activeCardTheme = selected)
+                                                        )
+                                                        onCardThemeChanged(selected)
+                                                        notice = "${theme.title} is nu je actieve kaartstijl."
+                                                    }.onFailure {
+                                                        error = it.localizedMessage ?: "Kaartstijl kon niet worden ingesteld."
+                                                    }
+                                                }
+                                            }
+                                        ) { Text("Gebruiken") }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
