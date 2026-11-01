@@ -1089,6 +1089,22 @@ export const getSeasonProgress = onCall(async (request) => {
     }
   }
 
+  let previousRankScore: number | null = null;
+  let currentRank = 0;
+  const leaderboard = leaderboardSnap.docs.map((doc, index) => {
+    const rankScore = Number(doc.get("rankScore") ?? 0);
+    if (rankScore !== previousRankScore) currentRank = index + 1;
+    previousRankScore = rankScore;
+    return {
+      uid: doc.id,
+      rank: currentRank,
+      displayName: cleanDisplayName(doc.get("displayName")),
+      wins: Math.max(0, Number(doc.get("wins") ?? 0)),
+      matchesPlayed: Math.max(0, Number(doc.get("matchesPlayed") ?? 0)),
+      activeBadgeId: typeof doc.get("activeBadgeId") === "string" ? doc.get("activeBadgeId") : null,
+    };
+  });
+
   return {
     seasonKey,
     title: "Maandelijkse meesters",
@@ -1100,13 +1116,7 @@ export const getSeasonProgress = onCall(async (request) => {
     rewardClaimed: season.rewardClaimed === true,
     rewardBadgeId: cosmetics.includes(badgeId) ? badgeId : null,
     myRank,
-    leaderboard: leaderboardSnap.docs.map((doc) => ({
-      uid: doc.id,
-      displayName: cleanDisplayName(doc.get("displayName")),
-      wins: Math.max(0, Number(doc.get("wins") ?? 0)),
-      matchesPlayed: Math.max(0, Number(doc.get("matchesPlayed") ?? 0)),
-      activeBadgeId: typeof doc.get("activeBadgeId") === "string" ? doc.get("activeBadgeId") : null,
-    })),
+    leaderboard,
     resetsAtUtc: new Date(Date.UTC(
       Number(seasonKey.slice(0, 4)),
       Number(seasonKey.slice(5, 7)),
