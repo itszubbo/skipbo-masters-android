@@ -42,6 +42,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val CommunityGold = Color(0xFFFFD34E)
@@ -67,6 +70,8 @@ internal fun CommunityScreen(
     var overview by remember { mutableStateOf<CommunityOverview?>(null) }
     var leaderboard by remember { mutableStateOf<List<CommunityPlayer>>(emptyList()) }
     var leaderboardCursor by remember { mutableStateOf<LeaderboardCursor?>(null) }
+    var matchHistory by remember { mutableStateOf<List<MatchHistoryItem>>(emptyList()) }
+    var historyLoaded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var friendCodeInput by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -103,6 +108,21 @@ internal fun CommunityScreen(
                 leaderboardCursor = page.nextCursor
             }.onFailure {
                 error = it.localizedMessage ?: "Ranglijst kon niet worden geladen."
+            }
+        }
+    }
+ 
+    fun loadMatchHistory() {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadMatchHistory(context) { result ->
+            loading = false
+            result.onSuccess {
+                matchHistory = it
+                historyLoaded = true
+            }.onFailure {
+                historyLoaded = false
+                error = it.localizedMessage ?: "Wedstrijdgeschiedenis kon niet worden geladen."
             }
         }
     }
@@ -151,6 +171,7 @@ internal fun CommunityScreen(
             TextButton(onClick = {
                 loadOverview()
                 if (selectedTab == 2) loadLeaderboard(reset = true)
+                if (selectedTab == 3) loadMatchHistory()
             }) { Text("Vernieuwen", color = CommunityMuted) }
         }
 
@@ -202,6 +223,10 @@ internal fun CommunityScreen(
                         StatCell("${data.profile.losses}", "Verloren")
                         StatCell("${data.profile.matchesPlayed}", "Wedstrijden")
                     }
+                    val winRate = if (data.profile.matchesPlayed > 0) {
+                        data.profile.wins * 100 / data.profile.matchesPlayed
+                    } else 0
+                    Text("Winstpercentage: $winRate%", color = CommunityMuted, fontSize = 11.sp)
                     if (data.profile.matchesPlayed < 10) {
                         Text("Voorlopig gerangschikt • ${10 - data.profile.matchesPlayed} wedstrijden tot officiële plaatsing", color = CommunityMuted, fontSize = 10.sp)
                     }
@@ -303,9 +328,12 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst").forEachIndexed { index, label ->
-                Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = {
-                    Text(label, fontSize = 11.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis").forEachIndexed { index, label ->
+                Tab(selected = selectedTab == index, onClick = {
+                    selectedTab = index
+                    if (index == 3 && !historyLoaded) loadMatchHistory()
+                }, text = {
+                    Text(label, fontSize = 10.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
             }
         }
@@ -424,7 +452,7 @@ internal fun CommunityScreen(
                     }
                 }
             }
-            else -> {
+            2 -> {
                 Text("WERELDWIJDE RANGLIJST", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 if (leaderboard.isEmpty()) Text("Er zijn nog geen gerangschikte spelers.", color = CommunityMuted, fontSize = 12.sp)
                 leaderboard.forEachIndexed { index, player ->
@@ -446,6 +474,59 @@ internal fun CommunityScreen(
                     }
                 }
             }
+            else -> {
+                Text("RECENTE WEDSTRIJDEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Text("Uitslagen van online wedstrijden die door de server zijn bevestigd.", color = CommunityMuted, fontSize = 11.sp)
+                OutlinedButton(
+                    onClick = { loadMatchHistory() },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Geschiedenis vernieuwen") }
+
+                if (!historyLoaded && !loading) {
+                    Text("Open dit tabblad om je wedstrijden op te halen.", color = CommunityMuted, fontSize = 12.sp)
+                } else if (historyLoaded && matchHistory.isEmpty()) {
+                    Text("Je hebt nog geen afgeronde online wedstrijden.", color = CommunityMuted, fontSize = 12.sp)
+                }
+
+                matchHistory.forEach { match ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(match.opponentName, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text(formatMatchDate(match.playedAtMs), color = CommunityMuted, fontSize = 10.sp)
+                                Text(
+                                    if (match.won) "Gewonnen" else "Verloren",
+                                    color = if (match.won) Color(0xFF9EE6B4) else Color(0xFFFFA8A8),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            val pointLabel = when {
+                                match.ratingChange > 0 -> "+${match.ratingChange}"
+                                match.ratingChange < 0 -> "−${kotlin.math.abs(match.ratingChange)}"
+                                else -> "0"
+                            }
+                            Text(
+                                "$pointLabel punten",
+                                color = if (match.ratingChange >= 0) CommunityGold else Color(0xFFFFA8A8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
         Text(
             "Wedstrijdscores worden alleen na een door de server bevestigde overwinning aangepast.",
@@ -461,4 +542,13 @@ private fun StatCell(value: String, label: String) {
         Text(value, color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 17.sp)
         Text(label, color = CommunityMuted, fontSize = 9.sp)
     }
+}
+
+private fun formatMatchDate(timestampMs: Long): String {
+    if (timestampMs <= 0L) return "Datum onbekend"
+    return DateFormat.getDateTimeInstance(
+        DateFormat.MEDIUM,
+        DateFormat.SHORT,
+        Locale.getDefault()
+    ).format(Date(timestampMs))
 }
