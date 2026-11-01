@@ -86,6 +86,8 @@ internal fun CommunityScreen(
     var achievementsLoaded by remember { mutableStateOf(false) }
     var tournaments by remember { mutableStateOf<List<TournamentSummary>>(emptyList()) }
     var tournamentsLoaded by remember { mutableStateOf(false) }
+    var dailyProgress by remember { mutableStateOf<DailyProgress?>(null) }
+    var dailyLoaded by remember { mutableStateOf(false) }
     var tournamentTitle by remember { mutableStateOf("Mijn vriendentoernooi") }
     var tournamentCapacity by remember { mutableIntStateOf(4) }
     var tournamentCodeInput by remember { mutableStateOf("") }
@@ -174,6 +176,40 @@ internal fun CommunityScreen(
         }
     }
  
+    fun loadDailyProgress() {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadDailyProgress(context) { result ->
+            loading = false
+            result.onSuccess {
+                dailyProgress = it
+                dailyLoaded = true
+            }.onFailure {
+                dailyLoaded = false
+                error = it.localizedMessage ?: "Dagelijkse uitdagingen konden niet worden geladen."
+            }
+        }
+    }
+
+    fun claimDailyRewardNow() {
+        loading = true
+        error = ""
+        FirebaseCommunity.claimDailyReward(context) { result ->
+            loading = false
+            result.onSuccess { claim ->
+                notice = when {
+                    !claim.claimed -> "Je dagbeloning is vandaag al opgehaald."
+                    claim.cosmeticUnlocked != null -> "+${claim.xpAwarded} XP • Niveau ${claim.level} • Smaragdgroene profielrand vrijgespeeld!"
+                    else -> "+${claim.xpAwarded} XP toegevoegd • inlogreeks: ${claim.streak} dagen."
+                }
+                loadDailyProgress()
+                loadOverview()
+            }.onFailure {
+                error = it.localizedMessage ?: "Dagbeloning ophalen is mislukt."
+            }
+        }
+    }
+
     fun loadTournaments() {
         loading = true
         error = ""
@@ -426,6 +462,10 @@ internal fun CommunityScreen(
                         data.profile.wins * 100 / data.profile.matchesPlayed
                     } else 0
                     Text("Winstpercentage: $winRate%", color = CommunityMuted, fontSize = 11.sp)
+                    Text("Niveau ${data.profile.level} • ${data.profile.xp} XP", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    if (data.profile.unlockedCosmetics.contains("emerald_frame")) {
+                        Text("✦ Smaragdgroene profielrand vrijgespeeld", color = Color(0xFF9EE6B4), fontSize = 10.sp)
+                    }
                     if (data.profile.matchesPlayed < 10) {
                         Text("Voorlopig gerangschikt • ${10 - data.profile.matchesPlayed} wedstrijden tot officiële plaatsing", color = CommunityMuted, fontSize = 10.sp)
                     }
@@ -527,12 +567,13 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien").forEachIndexed { index, label ->
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties", "Toernooien", "Dagelijks").forEachIndexed { index, label ->
                 Tab(selected = selectedTab == index, onClick = {
                     selectedTab = index
                     if (index == 3 && !historyLoaded) loadMatchHistory()
                     if (index == 4 && !achievementsLoaded) loadAchievements()
                     if (index == 5 && !tournamentsLoaded) loadTournaments()
+                    if (index == 6 && !dailyLoaded) loadDailyProgress()
                 }, text = {
                     Text(label, fontSize = 8.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
@@ -802,7 +843,7 @@ internal fun CommunityScreen(
                     }
                 }
             }
-            else -> {
+            5 -> {
                 val details = tournamentDetails
                 if (details == null) {
                     Text("VRIENDENTOERNOOIEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
@@ -961,6 +1002,87 @@ internal fun CommunityScreen(
                     if (details.tournament.status == "COMPLETED" && details.tournament.winnerName != null) {
                         Text("🏆 Toernooiwinnaar: ${details.tournament.winnerName}", color = CommunityGold, fontWeight = FontWeight.Black)
                     }
+                }
+            }
+            else -> {
+                val daily = dailyProgress
+                Text("DAGELIJKSE UITDAGINGEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Text("Voltooi online missies, verdien XP en bouw je dagelijkse inlogreeks op.", color = CommunityMuted, fontSize = 11.sp)
+
+                OutlinedButton(
+                    onClick = { loadDailyProgress() },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Voortgang vernieuwen") }
+
+                if (daily == null) {
+                    if (!loading) Text("Open dit tabblad om je dagelijkse voortgang op te halen.", color = CommunityMuted, fontSize = 12.sp)
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CommunityPanel),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("SPEELNIVEAU ${daily.level}", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                            Text(
+                                "${daily.xpIntoLevel} / ${daily.xpForNextLevel} XP naar niveau ${daily.level + 1}",
+                                color = CommunityMuted,
+                                fontSize = 11.sp
+                            )
+                            Text("Inlogreeks: ${daily.streak} dagen", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Dagreset: 00:00 UTC", color = CommunityMuted, fontSize = 9.sp)
+                            Button(
+                                onClick = { claimDailyRewardNow() },
+                                enabled = !loading && daily.canClaim,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (daily.canClaim) "Dagbeloning ophalen • +${daily.xpReward} XP" else "Dagbeloning vandaag al opgehaald")
+                            }
+                            if (daily.unlockedCosmetics.contains("emerald_frame")) {
+                                Text("✦ Beloning vrijgespeeld: smaragdgroene profielrand", color = Color(0xFF9EE6B4), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            } else {
+                                Text("Haal 7 dagen achter elkaar je dagbeloning op voor een smaragdgroene profielrand.", color = CommunityMuted, fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    Text("MISSIES VAN VANDAAG", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                    daily.missions.forEach { mission ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (mission.completed) Color(0xFF1B4837) else CommunityPanel
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(13.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(if (mission.completed) "✓" else "◌", color = if (mission.completed) Color(0xFF9EE6B4) else CommunityGold, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(mission.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text(mission.description, color = CommunityMuted, fontSize = 10.sp)
+                                    Text(
+                                        "${mission.progress} / ${mission.target} • +${mission.xpReward} XP",
+                                        color = CommunityGold,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (mission.completed) {
+                                    Text("VOLTOOID", color = Color(0xFF9EE6B4), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        "Missie-XP wordt automatisch toegekend na een serverbevestigde online wedstrijd. Lokale potjes tegen de computer tellen niet mee.",
+                        color = CommunityMuted,
+                        fontSize = 10.sp
+                    )
                 }
             }
         }
