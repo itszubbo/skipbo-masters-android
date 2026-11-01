@@ -102,6 +102,14 @@ internal data class AchievementItem(
     val unlockedAtMs: Long?
 )
 
+internal data class SeasonLeaderboardEntry(
+    val uid: String,
+    val displayName: String,
+    val wins: Int,
+    val matchesPlayed: Int,
+    val activeBadgeId: String?
+)
+
 internal data class SeasonProgress(
     val seasonKey: String,
     val title: String,
@@ -112,7 +120,9 @@ internal data class SeasonProgress(
     val xpReward: Int,
     val rewardClaimed: Boolean,
     val rewardBadgeId: String?,
-    val resetsAtUtc: String
+    val resetsAtUtc: String,
+    val myRank: Int? = null,
+    val leaderboard: List<SeasonLeaderboardEntry> = emptyList()
 )
 
 internal data class TournamentParticipant(
@@ -196,7 +206,18 @@ internal object FirebaseCommunity {
                     xpReward = map.int("xpReward", 150),
                     rewardClaimed = map["rewardClaimed"] as? Boolean ?: false,
                     rewardBadgeId = map["rewardBadgeId"] as? String,
-                    resetsAtUtc = map.string("resetsAtUtc")
+                    resetsAtUtc = map.string("resetsAtUtc"),
+                    myRank = (map["myRank"] as? Number)?.toInt(),
+                    leaderboard = map.list("leaderboard").map { item ->
+                        val entry = item.asMap()
+                        SeasonLeaderboardEntry(
+                            uid = entry.string("uid"),
+                            displayName = entry.string("displayName", "Skip-Bo speler"),
+                            wins = entry.int("wins"),
+                            matchesPlayed = entry.int("matchesPlayed"),
+                            activeBadgeId = entry["activeBadgeId"] as? String
+                        )
+                    }
                 )
             })
         }
