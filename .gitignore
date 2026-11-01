@@ -1,0 +1,10 @@
+*.iml
+.gradle/
+.idea/
+local.properties
+/build/
+*/build/
+.DS_Store
+
+# Firebase project configuration contains project identifiers
+app/google-services.json
