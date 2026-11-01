@@ -1292,6 +1292,7 @@ export const getTournamentDetails = onCall(async (request) => {
   return {
     tournament: {
       tournamentId: id,
+      inviteCode: id,
       title: String(tournament.title ?? "Vriendentoernooi"),
       capacity: Number(tournament.capacity ?? 4),
       status: String(tournament.status ?? "OPEN"),
