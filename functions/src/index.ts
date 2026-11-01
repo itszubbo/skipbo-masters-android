@@ -724,6 +724,7 @@ export const ensureFriendCode = onCall(async (request) => {
         wins: Number(profile.wins ?? 0),
         losses: Number(profile.losses ?? 0),
         matchesPlayed: Number(profile.matchesPlayed ?? 0),
+        level: getLevelProgress(Number(profile.xp ?? 0)).level,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       if (!selectedCodeSnap.exists) {
@@ -920,6 +921,9 @@ export const getCommunityOverview = onCall(async (request) => {
       uid, displayName: cleanDisplayName(me.displayName), friendCode: String(me.friendCode ?? ""),
       rating: Number(me.rating ?? 1000), wins: Number(me.wins ?? 0), losses: Number(me.losses ?? 0),
       matchesPlayed: Number(me.matchesPlayed ?? 0),
+      xp: Number(me.xp ?? 0),
+      level: getLevelProgress(Number(me.xp ?? 0)).level,
+      unlockedCosmetics: Array.isArray(me.unlockedCosmetics) ? me.unlockedCosmetics : [],
       avatarPath: typeof me.avatarPath === "string" ? me.avatarPath : null,
     },
     friends: friendUids.map(publicPlayer),
@@ -1400,6 +1404,130 @@ export const startTournamentMatch = onCall(async (request) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
     return { roomCode: code };
+  });
+});
+
+/** Read today's server-dated missions and login reward state. */
+export const getDailyProgress = onCall(async (request) => {
+  const uid = requireUid(request);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const profileRef = db.doc(`profiles/${uid}`);
+  const dailyRef = profileRef.collection("dailyChallenges").doc(todayKey);
+  const rewardRef = profileRef.collection("dailyRewards").doc("current");
+  const [profileSnap, dailySnap, rewardSnap] = await Promise.all([
+    profileRef.get(),
+    dailyRef.get(),
+    rewardRef.get(),
+  ]);
+  if (!profileSnap.exists) {
+    throw new HttpsError("failed-precondition", "Je spelersprofiel is nog niet aangemaakt.");
+  }
+
+  const profile = profileSnap.data() ?? {};
+  const daily = dailySnap.data() ?? {};
+  const reward = rewardSnap.data() ?? {};
+  const completedIds = new Set(
+    Array.isArray(daily.completedMissionIds)
+      ? daily.completedMissionIds.filter((id): id is string => typeof id === "string")
+      : []
+  );
+  const xp = Math.max(0, Number(profile.xp ?? 0));
+  const level = getLevelProgress(xp);
+  return {
+    dateKey: todayKey,
+    missions: getDailyMissionProgress(
+      Number(daily.matchesPlayed ?? 0),
+      Number(daily.wins ?? 0),
+      completedIds
+    ),
+    loginReward: {
+      canClaim: reward.lastClaimedDate !== todayKey,
+      streak: Number(reward.streak ?? 0),
+      lastClaimedDate: typeof reward.lastClaimedDate === "string" ? reward.lastClaimedDate : null,
+      xpReward: 25,
+      nextCosmeticAt: 7,
+    },
+    level,
+    unlockedCosmetics: Array.isArray(profile.unlockedCosmetics) ? profile.unlockedCosmetics : [],
+  };
+});
+
+/** Claim the UTC daily login reward once per date; seven consecutive claims unlock a frame. */
+export const claimDailyReward = onCall(async (request) => {
+  const uid = requireUid(request);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const profileRef = db.doc(`profiles/${uid}`);
+  const publicRef = db.doc(`publicProfiles/${uid}`);
+  const rewardRef = profileRef.collection("dailyRewards").doc("current");
+
+  return db.runTransaction(async (transaction) => {
+    const [profileSnap, publicSnap, rewardSnap] = await Promise.all([
+      transaction.get(profileRef),
+      transaction.get(publicRef),
+      transaction.get(rewardRef),
+    ]);
+    if (!profileSnap.exists || !publicSnap.exists) {
+      throw new HttpsError("failed-precondition", "Je spelersprofiel is nog niet aangemaakt.");
+    }
+
+    const profile = profileSnap.data() ?? {};
+    const reward = rewardSnap.data() ?? {};
+    const lastClaimedDate = typeof reward.lastClaimedDate === "string"
+      ? reward.lastClaimedDate
+      : null;
+
+    if (lastClaimedDate === todayKey) {
+      const currentXp = Math.max(0, Number(profile.xp ?? 0));
+      return {
+        claimed: false,
+        xpAwarded: 0,
+        streak: Number(reward.streak ?? 0),
+        level: getLevelProgress(currentXp),
+        cosmeticUnlocked: null,
+      };
+    }
+
+    const streak = nextDailyStreak(
+      lastClaimedDate,
+      todayKey,
+      Number(reward.streak ?? 0)
+    );
+    const xpAwarded = 25;
+    const xp = Math.max(0, Number(profile.xp ?? 0)) + xpAwarded;
+    const level = getLevelProgress(xp);
+    const existingCosmetics = Array.isArray(profile.unlockedCosmetics)
+      ? profile.unlockedCosmetics.filter((item): item is string => typeof item === "string")
+      : [];
+    const cosmeticUnlocked = streak >= 7 && !existingCosmetics.includes("emerald_frame")
+      ? "emerald_frame"
+      : null;
+    const unlockedCosmetics = cosmeticUnlocked
+      ? [...existingCosmetics, cosmeticUnlocked]
+      : existingCosmetics;
+
+    transaction.set(profileRef, {
+      xp,
+      unlockedCosmetics,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(publicRef, {
+      level: level.level,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    transaction.set(rewardRef, {
+      lastClaimedDate: todayKey,
+      streak,
+      totalClaims: Number(reward.totalClaims ?? 0) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return {
+      claimed: true,
+      xpAwarded,
+      streak,
+      level,
+      cosmeticUnlocked,
+    };
   });
 });
 
