@@ -117,3 +117,35 @@ test("invalid or negative achievement counters never create progress", () => {
   assert.equal(progress.find(item => item.id === "first_win").unlocked, false);
 });
 
+test("four-player tournament creates two semifinals and one final", () => {
+  const { buildTournamentBracket } = require("../lib/communityRules.js");
+  const bracket = buildTournamentBracket(["a", "b", "c", "d"]);
+  assert.deepEqual(
+    bracket.map(({ round, slot, playerUids }) => ({ round, slot, playerUids })),
+    [
+      { round: 1, slot: 0, playerUids: ["a", "b"] },
+      { round: 1, slot: 1, playerUids: ["c", "d"] },
+      { round: 2, slot: 0, playerUids: [] }
+    ]
+  );
+});
+
+test("eight-player tournament creates a complete seven-match bracket", () => {
+  const { buildTournamentBracket } = require("../lib/communityRules.js");
+  const bracket = buildTournamentBracket(["a", "b", "c", "d", "e", "f", "g", "h"]);
+  assert.equal(bracket.length, 7);
+  assert.equal(bracket.filter(match => match.round === 1).length, 4);
+  assert.equal(bracket.filter(match => match.round === 2).length, 2);
+  assert.equal(bracket.filter(match => match.round === 3).length, 1);
+  assert.deepEqual(bracket.slice(0, 4).map(match => match.playerUids), [
+    ["a", "b"], ["c", "d"], ["e", "f"], ["g", "h"]
+  ]);
+});
+
+test("tournament brackets reject invalid sizes and duplicate identities", () => {
+  const { buildTournamentBracket } = require("../lib/communityRules.js");
+  assert.throws(() => buildTournamentBracket(["a", "b", "c"]));
+  assert.throws(() => buildTournamentBracket(["a", "b", "c", "a"]));
+  assert.throws(() => buildTournamentBracket(["a", "b", "c", ""]));
+});
+
