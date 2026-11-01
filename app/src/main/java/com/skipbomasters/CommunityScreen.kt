@@ -509,6 +509,24 @@ internal fun CommunityScreen(
                     } else 0
                     Text("Winstpercentage: $winRate%", color = CommunityMuted, fontSize = 11.sp)
                     Text("Niveau ${data.profile.level} • ${data.profile.xp} XP", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    data.profile.activeBadgeId?.let { badgeId ->
+                        Text("🏅 Badge: ${badgeName(badgeId)}", color = Color(0xFFFFE29A), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                        TextButton(
+                            onClick = {
+                                loading = true
+                                FirebaseCommunity.setActiveBadge(context, null) { result ->
+                                    loading = false
+                                    result.onSuccess {
+                                        overview = overview?.copy(profile = data.profile.copy(activeBadgeId = null))
+                                        notice = "Profielbadge verwijderd."
+                                    }.onFailure {
+                                        error = it.localizedMessage ?: "Badge kon niet worden verwijderd."
+                                    }
+                                }
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Badge verwijderen", color = CommunityMuted, fontSize = 10.sp) }
+                    }
                     if (data.profile.unlockedCosmetics.contains("emerald_frame")) {
                         Text("✦ Smaragdgroene profielrand vrijgespeeld", color = Color(0xFF9EE6B4), fontSize = 10.sp)
                     }
@@ -884,6 +902,28 @@ internal fun CommunityScreen(
                                         color = CommunityMuted,
                                         fontSize = 9.sp
                                     )
+                                }
+                                if (achievement.unlocked) {
+                                    val badgeIsActive = overview?.profile?.activeBadgeId == achievement.id
+                                    OutlinedButton(
+                                        enabled = !loading && !badgeIsActive,
+                                        onClick = {
+                                            loading = true
+                                            error = ""
+                                            FirebaseCommunity.setActiveBadge(context, achievement.id) { result ->
+                                                loading = false
+                                                result.onSuccess { selected ->
+                                                    overview = overview?.let { current ->
+                                                        current.copy(profile = current.profile.copy(activeBadgeId = selected))
+                                                    }
+                                                    notice = "Trofeebadge ${achievement.title} is nu actief."
+                                                }.onFailure {
+                                                    error = it.localizedMessage ?: "Trofeebadge kon niet worden uitgerust."
+                                                }
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) { Text(if (badgeIsActive) "Badge actief" else "Uitruisten als badge", fontSize = 10.sp) }
                                 }
                             }
                         }
