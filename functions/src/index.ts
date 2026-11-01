@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked, updateSeasonProgress, isValidAchievementBadgeId } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked, updateSeasonProgress, seasonRankScore, isValidAchievementBadgeId } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -554,6 +554,28 @@ export const submitOnlineMove = onCall(async (request) => {
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
 
+        // Keep a public, season-scoped ranking row in the same idempotent
+        // transaction as the confirmed result and personal season counters.
+        const seasonBoard = db.collection("seasonLeaderboards").doc(seasonKey).collection("players");
+        transaction.set(seasonBoard.doc(winnerUid), {
+          uid: winnerUid,
+          displayName: winnerName,
+          wins: winnerSeasonUpdate.wins,
+          matchesPlayed: winnerSeasonUpdate.matchesPlayed,
+          rankScore: seasonRankScore(winnerSeasonUpdate.wins, winnerSeasonUpdate.matchesPlayed),
+          activeBadgeId: typeof winnerData.activeBadgeId === "string" ? winnerData.activeBadgeId : null,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        transaction.set(seasonBoard.doc(loserUid), {
+          uid: loserUid,
+          displayName: loserName,
+          wins: loserSeasonUpdate.wins,
+          matchesPlayed: loserSeasonUpdate.matchesPlayed,
+          rankScore: seasonRankScore(loserSeasonUpdate.wins, loserSeasonUpdate.matchesPlayed),
+          activeBadgeId: typeof loserData.activeBadgeId === "string" ? loserData.activeBadgeId : null,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
         achievementEntries.forEach((entry, index) => {
           if (achievementSnapshots[index].exists) return;
           transaction.create(entry.ref, {
@@ -1035,13 +1057,19 @@ export const setActiveBadge = onCall(async (request) => {
   });
 });
 
-/** Return this month's UTC season track and one-time reward state. */
+/** Return this month's UTC season track, one-time reward, and live standings. */
 export const getSeasonProgress = onCall(async (request) => {
   const uid = requireUid(request);
   const seasonKey = new Date().toISOString().slice(0, 7);
   const profileRef = db.doc(`profiles/${uid}`);
   const seasonRef = profileRef.collection("seasons").doc(seasonKey);
-  const [profileSnap, seasonSnap] = await Promise.all([profileRef.get(), seasonRef.get()]);
+  const seasonBoard = db.collection("seasonLeaderboards").doc(seasonKey).collection("players");
+  const [profileSnap, seasonSnap, leaderboardSnap, mySeasonBoardSnap] = await Promise.all([
+    profileRef.get(),
+    seasonRef.get(),
+    seasonBoard.orderBy("rankScore", "desc").limit(25).get(),
+    seasonBoard.doc(uid).get(),
+  ]);
   if (!profileSnap.exists) {
     throw new HttpsError("failed-precondition", "Je spelersprofiel is niet beschikbaar.");
   }
@@ -1051,6 +1079,16 @@ export const getSeasonProgress = onCall(async (request) => {
   const badgeId = `season_badge_${seasonKey.replace("-", "")}`;
   const profile = profileSnap.data() ?? {};
   const cosmetics = Array.isArray(profile.unlockedCosmetics) ? profile.unlockedCosmetics : [];
+
+  let myRank: number | null = null;
+  if (mySeasonBoardSnap.exists) {
+    const myScore = Number(mySeasonBoardSnap.get("rankScore"));
+    if (Number.isSafeInteger(myScore) && myScore >= 0) {
+      const ahead = await seasonBoard.where("rankScore", ">", myScore).count().get();
+      myRank = ahead.data().count + 1;
+    }
+  }
+
   return {
     seasonKey,
     title: "Maandelijkse meesters",
@@ -1061,6 +1099,14 @@ export const getSeasonProgress = onCall(async (request) => {
     xpReward: 150,
     rewardClaimed: season.rewardClaimed === true,
     rewardBadgeId: cosmetics.includes(badgeId) ? badgeId : null,
+    myRank,
+    leaderboard: leaderboardSnap.docs.map((doc) => ({
+      uid: doc.id,
+      displayName: cleanDisplayName(doc.get("displayName")),
+      wins: Math.max(0, Number(doc.get("wins") ?? 0)),
+      matchesPlayed: Math.max(0, Number(doc.get("matchesPlayed") ?? 0)),
+      activeBadgeId: typeof doc.get("activeBadgeId") === "string" ? doc.get("activeBadgeId") : null,
+    })),
     resetsAtUtc: new Date(Date.UTC(
       Number(seasonKey.slice(0, 4)),
       Number(seasonKey.slice(5, 7)),
