@@ -430,3 +430,48 @@ De nieuwe functie `getMyAchievements`, de avatar-validatie en de Storage-regels 
 - Twee spelers die tegelijk een laatste kaart spelen of resultaten opnieuw proberen te verzenden.
 - Firebase Emulator Suite- en end-to-endtests voor Storage Security Rules en het eenmalig toekennen van trofeeën.
 
+## v17 — privétoernooien met vrienden
+
+### Android
+- Nieuw tabblad **Toernooien** in het communityscherm.
+- Organiseer een privétoernooi voor vier of acht spelers.
+- Deel de persoonlijke toernooicode via het Android-deelmenu.
+- Vrienden kunnen met de code deelnemen; de server controleert of zij bevriend zijn met de organisator.
+- Eigen toernooien tonen deelnemers, status en de complete bracket.
+- Spelers kunnen hun eigen actieve wedstrijd openen of starten vanuit het toernooischerm.
+- Deelnemers zien de winnaar na iedere afgeronde ronde en de kampioen na de finale.
+
+### Backend
+Nieuwe callable Cloud Functions:
+- `createTournament` — maakt een privétoernooi aan.
+- `joinTournament` — controleert vriendschap en voegt een deelnemer toe.
+- `getMyTournaments` — toont alleen toernooien waarvan de speler deelnemer is.
+- `getTournamentDetails` — geeft bracket en status alleen aan deelnemers.
+- `startTournamentMatch` — maakt servermatig een online kamer voor de juiste twee spelers.
+
+### Bracket en uitslagen
+- De server schudt de startvolgorde en maakt een knock-outbracket.
+- Vier spelers: twee halve finales en een finale.
+- Acht spelers: vier kwartfinales, twee halve finales en een finale.
+- De winnaar gaat alleen door na een door `submitOnlineMove` servermatig bevestigde online overwinning.
+- De uitslag, Elo-statistieken, trofeeën en bracketdoorschuiving worden in dezelfde Firestore-transactie verwerkt.
+- De finale markeert het toernooi als afgerond en legt de winnaar vast.
+- Firestore-regels blokkeren directe clienttoegang tot `tournaments` en `tournamentMatches`; toegang loopt uitsluitend via Cloud Functions.
+
+### Firebase uitrollen
+Voer vanuit de projectroot uit:
+```bash
+firebase deploy --only firestore:rules,functions
+```
+Er zijn voor v17 geen nieuwe samengestelde Firestore-indexen nodig. Een bestaand Firebase-project, uitgerolde functies, Firestore en de bestaande online kamerconfiguratie zijn vereist.
+
+### Versie
+- Android `versionCode`: 17
+- Android `versionName`: 0.17.0
+
+### Beperkingen
+- Privétoernooien zijn beperkt tot vier of acht spelers; er is nog geen openbaar wereldwijd toernooi of automatisch toernooiplan.
+- De organisator moet de code handmatig delen met vrienden.
+- Toernooiwedstrijden zijn online tweespelerpotjes; de Android-app moet op beide toestellen zijn geïnstalleerd en de Cloud Functions moeten zijn uitgerold.
+- Volledige Firebase Emulator Suite- en fysieke tweetoestellentests blijven nodig.
+
