@@ -1,12 +1,28 @@
 package com.skipbomasters
 
 import android.os.Bundle
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -292,9 +309,7 @@ private fun SkipBoApp() {
                     Text("Online spelen, vrienden en ranglijst • Firebase-project vereist.", color = Color(0xFFB8CFC3), fontSize = 11.sp)
                 }
             } else {
-                key(revision) {
-                    GameScreen(g, onChanged = { revision++ }, onHome = { game = null })
-                }
+                GameScreen(g, onChanged = { revision++ }, onHome = { game = null }, gameRevision = revision)
             }
         }
     }
@@ -309,10 +324,22 @@ internal fun GameScreen(
     localPlayerIndex: Int? = null,
     syncMessage: String? = null,
     onOnlinePlay: ((String, Int) -> Unit)? = null,
-    onOnlineDiscard: ((Int, Int) -> Unit)? = null
+    onOnlineDiscard: ((Int, Int) -> Unit)? = null,
+    gameRevision: Int = 0
 ) {
+    // Keep the mutable game engine observable without disposing this composition.
+    gameRevision.hashCode()
     val displayPlayer = localPlayerIndex?.let { g.players[it] } ?: g.player()
     var help by remember { mutableStateOf(false) }
+    var soundEnabled by remember { mutableStateOf(false) }
+    val toneGenerator = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 55) }
+    DisposableEffect(toneGenerator) { onDispose { toneGenerator.release() } }
+    fun playUiSound(durationMs: Int = 85) {
+        if (soundEnabled) toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, durationMs)
+    }
+    LaunchedEffect(g.finished) {
+        if (g.finished) playUiSound(220)
+    }
     LaunchedEffect(g.current, g.message) {
         if (g.current == 1 && !g.finished && g.vsComputer) {
             delay(650)
@@ -330,6 +357,9 @@ internal fun GameScreen(
             Column(Modifier.weight(1f)) {
                 Text("SKIP-BO", color = Color(0xFFFFE6A0), fontWeight = FontWeight.Black, fontSize = 23.sp, letterSpacing = 2.sp)
                 Text("MASTERS  •  CARD TABLE", color = Color(0xFF9AB8AA), fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 2.sp)
+            }
+            TextButton(onClick = { soundEnabled = !soundEnabled; if (soundEnabled) playUiSound(65) }) {
+                Text(if (soundEnabled) "Geluid aan" else "Geluid uit", color = if (soundEnabled) Color(0xFFFFD34E) else Color.White)
             }
             TextButton(onClick = { help = true }) { Text("Regels", color = Color.White) }
             TextButton(onClick = onHome) { Text(if (localPlayerIndex != null) "Lobby" else "Menu", color = Color.White) }
@@ -358,8 +388,8 @@ internal fun GameScreen(
                 val stock = g.player().stockTop
                 PileCard(stock?.let { g.label(it) } ?: "LEEG", "${g.player().stockCount} over", Color(0xFFFFD34E), Modifier.width(76.dp), Color.Black) {
                     if (canPlayTurn && stock != null) {
-                        if (onOnlinePlay != null) onOnlinePlay("stock", -1)
-                        else { g.play(stock, "stock"); onChanged() }
+                        if (onOnlinePlay != null) { onOnlinePlay("stock", -1); playUiSound() }
+                        else { if (g.play(stock, "stock")) playUiSound(); onChanged() }
                     }
                 }
             }
@@ -373,8 +403,8 @@ internal fun GameScreen(
             itemsIndexed(displayPlayer.hand) { i, c ->
                 PlayingCard(c, selected = false, modifier = Modifier.width(55.dp).height(78.dp)) {
                     if (canPlayTurn && !g.finished) {
-                        if (onOnlinePlay != null) onOnlinePlay("hand", i)
-                        else { g.play(c, "hand", i); onChanged() }
+                        if (onOnlinePlay != null) { onOnlinePlay("hand", i); playUiSound() }
+                        else { if (g.play(c, "hand", i)) playUiSound(); onChanged() }
                     }
                 }
             }
@@ -386,8 +416,8 @@ internal fun GameScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     PileCard(c?.let { g.label(it) } ?: "—", "Afleg ${i+1}", Color(0xFF174C35), Modifier.width(68.dp)) {
                         if (canPlayTurn && c != null && !g.finished) {
-                            if (onOnlinePlay != null) onOnlinePlay("discard", i)
-                            else { g.play(c, "discard", i); onChanged() }
+                            if (onOnlinePlay != null) { onOnlinePlay("discard", i); playUiSound() }
+                            else { if (g.play(c, "discard", i)) playUiSound(); onChanged() }
                         }
                     }
                 }
@@ -411,7 +441,7 @@ internal fun GameScreen(
                         enabled = discardChoice >= 0,
                         onClick = {
                             if (onOnlineDiscard != null) onOnlineDiscard(discardChoice, pile)
-                            else { g.discard(discardChoice, pile, refillNextPlayer = localPlayerIndex == null); onChanged() }
+                            else { g.discard(discardChoice, pile, refillNextPlayer = localPlayerIndex == null); playUiSound(); onChanged() }
                             discardChoice = -1
                         },
                         contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp),
@@ -426,9 +456,29 @@ internal fun GameScreen(
         if (!syncMessage.isNullOrBlank()) {
             Text(syncMessage, color = Color(0xFFFFB6A8), fontSize = 10.sp)
         }
-        if (g.finished) {
-            Text("🏆 ${g.winner} heeft gewonnen!", color = Color(0xFFFFE082), fontSize = 24.sp, fontWeight = FontWeight.Black)
-            Button(onClick = onHome) { Text("Nieuw spel") }
+        AnimatedVisibility(
+            visible = g.finished,
+            enter = fadeIn(tween(320)) + scaleIn(initialScale = 0.78f, animationSpec = spring(dampingRatio = 0.62f)),
+            exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.92f)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF3B3218),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.5.dp, Color(0xFFFFD34E)),
+                shadowElevation = 12.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Text("🏆  OVERWINNING!  🏆", color = Color(0xFFFFD34E), fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text("${g.winner} heeft gewonnen!", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("De voorraadstapel is leeg. Knap gespeeld!", color = Color(0xFFFFE9B2), fontSize = 12.sp)
+                    Button(onClick = onHome) { Text("Nieuw spel") }
+                }
+            }
         }
         Spacer(Modifier.weight(1f))
         Text(
@@ -444,11 +494,16 @@ internal fun GameScreen(
 
 @Composable
 private fun InfoBox(name: String, detail: String, active: Boolean) {
+    val activeColor by animateColorAsState(
+        targetValue = if (active) Color(0xFFFFD98A) else Color(0xFF15382F),
+        animationSpec = tween(260),
+        label = "active-player-highlight"
+    )
     Column(
         Modifier.widthIn(min = 132.dp)
+            .animateContentSize(tween(220))
             .shadow(if (active) 8.dp else 2.dp, RoundedCornerShape(14.dp))
-            .background(if (active) Color(0xFFFFD98A) else Color(0xFF15382F), RoundedCornerShape(14.dp))
-            .then(if (active) Modifier else Modifier)
+            .background(activeColor, RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Text(name, color = if (active) Color(0xFF18251E) else Color.White, fontWeight = FontWeight.Bold)
@@ -458,14 +513,24 @@ private fun InfoBox(name: String, detail: String, active: Boolean) {
 @Composable
 private fun PileCard(main: String, sub: String, bg: Color, modifier: Modifier = Modifier, fg: Color = Color.White, onClick: (() -> Unit)? = null) {
     Column(
-        modifier.shadow(4.dp, RoundedCornerShape(11.dp))
+        modifier.animateContentSize(tween(210))
+            .shadow(4.dp, RoundedCornerShape(11.dp))
             .background(bg, RoundedCornerShape(11.dp))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
             .padding(5.dp).heightIn(min = 66.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(main, color = fg, fontSize = 19.sp, fontWeight = FontWeight.Black)
+        AnimatedContent(
+            targetState = main,
+            transitionSpec = {
+                (fadeIn(tween(190)) + scaleIn(initialScale = 0.72f, animationSpec = tween(190))) togetherWith
+                    (fadeOut(tween(100)) + scaleOut(targetScale = 0.9f, animationSpec = tween(100)))
+            },
+            label = "pile-top-card"
+        ) { animatedMain ->
+            Text(animatedMain, color = fg, fontSize = 19.sp, fontWeight = FontWeight.Black)
+        }
         Text(sub, color = fg.copy(alpha = .82f), fontSize = 9.sp)
     }
 }
@@ -473,10 +538,18 @@ private fun PileCard(main: String, sub: String, bg: Color, modifier: Modifier = 
 private fun PlayingCard(card: Card, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val bg = if (card.joker) Color(0xFFFFD34E) else Color.White
     val fg = if (card.joker) Color(0xFFB51F2A) else when (card.value % 3) { 0 -> Color(0xFF174C35); 1 -> Color(0xFFB51F2A); else -> Color(0xFF174C35) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = 0.58f, stiffness = 520f),
+        label = "playing-card-press"
+    )
     Column(
-        modifier.shadow(5.dp, RoundedCornerShape(10.dp))
+        modifier.graphicsLayer { scaleX = cardScale; scaleY = cardScale }
+            .shadow(5.dp, RoundedCornerShape(10.dp))
             .background(bg, RoundedCornerShape(10.dp))
-            .clickable { onClick() }
+            .clickable(interactionSource = interactionSource, indication = null) { onClick() }
             .padding(5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
