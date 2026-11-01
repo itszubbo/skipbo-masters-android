@@ -605,3 +605,12 @@ Er zijn geen nieuwe samengestelde Firestore-indexen of Storage-regels nodig.
 - Unit tests controleren seizoensvoortgang, eenmalige XP-beloning, ongeldige tellers en badge-ID-validatie.
 - De Android-interface, Cloud Functions en APK worden in de GitHub Actions-workflow gebouwd/gecontroleerd.
 - Emulator-, Firebase-project- en fysieke toesteltests moeten nog door de projecteigenaar worden uitgevoerd.
+
+
+## v23 — maandelijkse seizoensranglijst
+- Nieuwe maandelijkse ranglijst voor serverbevestigde online wedstrijden.
+- Overwinningen bepalen primair de positie; het aantal gespeelde wedstrijden breekt gelijke standen.
+- Gedeelde posities worden correct weergegeven en je eigen maandpositie staat bovenaan het ranglijstoverzicht.
+- Ranglijstregels worden samen met het wedstrijdresultaat en de seizoensvoortgang in één Firestore-transactie bijgewerkt.
+- De ranglijst toont de top 25 in de seizoensgegevens; de app presenteert de top 10. De eigen positie wordt afzonderlijk berekend, ook buiten de top 25.
+- De ranglijst gebruikt alleen online resultaten. Lokale AI- en pass-and-play-wedstrijden tellen niet mee.
