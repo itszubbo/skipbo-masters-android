@@ -1241,6 +1241,49 @@ internal fun CommunityScreen(
                             Text("Maandreset: 00:00 UTC op de eerste dag van de volgende maand.", color = CommunityMuted, fontSize = 9.sp)
                         }
                     }
+                    Text("MAANDELIJKSE RANGLIJST", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                    Text(
+                        season.myRank?.let { "Jouw positie: #$it" } ?: "Speel een online wedstrijd om in de ranglijst te verschijnen.",
+                        color = CommunityGold,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp
+                    )
+                    if (season.leaderboard.isEmpty()) {
+                        Text("Er zijn deze maand nog geen gerangschikte spelers.", color = CommunityMuted, fontSize = 11.sp)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            season.leaderboard.take(10).forEachIndexed { index, entry ->
+                                val isCurrentPlayer = FirebaseAuth.getInstance().currentUser?.uid == entry.uid
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isCurrentPlayer) Color(0xFF285543) else CommunityPanel
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("#${index + 1}", color = CommunityGold, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                entry.displayName + if (isCurrentPlayer) " (jij)" else "",
+                                                color = Color.White,
+                                                fontWeight = if (isCurrentPlayer) FontWeight.Bold else FontWeight.SemiBold,
+                                                fontSize = 12.sp
+                                            )
+                                            Text("${entry.wins} zeges • ${entry.matchesPlayed} wedstrijden", color = CommunityMuted, fontSize = 10.sp)
+                                        }
+                                        if (!entry.activeBadgeId.isNullOrBlank()) {
+                                            Text("✦", color = CommunityGold, fontSize = 15.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Text(
                         "Iedere door de server bevestigde online wedstrijd telt mee, ook een verlies. Lokale potjes tegen de computer tellen niet mee. De beloning wordt automatisch en slechts één keer per maand toegekend.",
                         color = CommunityMuted,
