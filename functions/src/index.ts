@@ -129,7 +129,7 @@ const cleanDisplayName = (value: unknown, fallback = "Skip-Bo speler") => {
 const friendRequestId = (a: string, b: string) =>
   createHash("sha256").update([a, b].sort().join(":")).digest("hex");
 const initialProfile = (uid: string, displayName: string) => ({
-  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0,
+  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0,
   createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
 });
 
@@ -347,7 +347,10 @@ export const submitOnlineMove = onCall(async (request) => {
         const winnerMatches = Number(winnerData.matchesPlayed ?? 0) + 1;
         const loserLosses = Number(loserData.losses ?? 0) + 1;
         const loserMatches = Number(loserData.matchesPlayed ?? 0) + 1;
-        const winnerWinStreak = Math.max(0, Number(winnerData.winStreak ?? 0)) + 1;
+        const previousWinnerStreak = Number(winnerData.winStreak ?? 0);
+        const winnerWinStreak = Number.isSafeInteger(previousWinnerStreak) && previousWinnerStreak >= 0
+          ? previousWinnerStreak + 1
+          : 1;
         const loserWinStreak = 0;
 
         // Determine eligible trophies from the post-match server statistics.
