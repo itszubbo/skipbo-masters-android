@@ -72,6 +72,8 @@ internal fun CommunityScreen(
     var leaderboardCursor by remember { mutableStateOf<LeaderboardCursor?>(null) }
     var matchHistory by remember { mutableStateOf<List<MatchHistoryItem>>(emptyList()) }
     var historyLoaded by remember { mutableStateOf(false) }
+    var achievements by remember { mutableStateOf<List<AchievementItem>>(emptyList()) }
+    var achievementsLoaded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var friendCodeInput by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -127,6 +129,21 @@ internal fun CommunityScreen(
         }
     }
 
+    fun loadAchievements() {
+        loading = true
+        error = ""
+        FirebaseCommunity.loadAchievements(context) { result ->
+            loading = false
+            result.onSuccess {
+                achievements = it
+                achievementsLoaded = true
+            }.onFailure {
+                achievementsLoaded = false
+                error = it.localizedMessage ?: "Prestaties konden niet worden geladen."
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         // Load the authenticated profile first; only then request the leaderboard.
         // This avoids racing two initial anonymous Firebase sign-in attempts.
@@ -172,6 +189,7 @@ internal fun CommunityScreen(
                 loadOverview()
                 if (selectedTab == 2) loadLeaderboard(reset = true)
                 if (selectedTab == 3) loadMatchHistory()
+                if (selectedTab == 4) loadAchievements()
             }) { Text("Vernieuwen", color = CommunityMuted) }
         }
 
@@ -328,12 +346,13 @@ internal fun CommunityScreen(
         }
 
         TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFF0B2821), contentColor = CommunityGold) {
-            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis").forEachIndexed { index, label ->
+            listOf("Vrienden", "Uitnodigingen", "Ranglijst", "Geschiedenis", "Prestaties").forEachIndexed { index, label ->
                 Tab(selected = selectedTab == index, onClick = {
                     selectedTab = index
                     if (index == 3 && !historyLoaded) loadMatchHistory()
+                    if (index == 4 && !achievementsLoaded) loadAchievements()
                 }, text = {
-                    Text(label, fontSize = 10.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                    Text(label, fontSize = 9.sp, fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
                 })
             }
         }
@@ -474,7 +493,7 @@ internal fun CommunityScreen(
                     }
                 }
             }
-            else -> {
+            3 -> {
                 Text("RECENTE WEDSTRIJDEN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 Text("Uitslagen van online wedstrijden die door de server zijn bevestigd.", color = CommunityMuted, fontSize = 11.sp)
                 OutlinedButton(
@@ -523,6 +542,80 @@ internal fun CommunityScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
+                        }
+                    }
+                }
+            }
+            else -> {
+                val unlockedCount = achievements.count { it.unlocked }
+                Text("PRESTATIES & TROFEEËN", color = CommunityMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Text(
+                    "$unlockedCount van ${achievements.size} trofeeën vrijgespeeld",
+                    color = CommunityGold,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    "Je prestaties worden automatisch toegekend na door de server bevestigde online wedstrijden.",
+                    color = CommunityMuted,
+                    fontSize = 11.sp
+                )
+                OutlinedButton(
+                    onClick = { loadAchievements() },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Prestaties vernieuwen") }
+
+                if (!achievementsLoaded && !loading) {
+                    Text("Open dit tabblad om je prestaties op te halen.", color = CommunityMuted, fontSize = 12.sp)
+                } else if (achievementsLoaded && achievements.isEmpty()) {
+                    Text("Er zijn nog geen prestaties beschikbaar.", color = CommunityMuted, fontSize = 12.sp)
+                }
+
+                achievements.forEach { achievement ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (achievement.unlocked) Color(0xFF1B4837) else CommunityPanel
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (achievement.unlocked) "🏆" else "🔒",
+                                fontSize = 25.sp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(achievement.title, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(achievement.description, color = CommunityMuted, fontSize = 10.sp)
+                                Text(
+                                    "${achievement.progress} / ${achievement.target}",
+                                    color = CommunityGold,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    if (achievement.unlocked) "VRIJGESPEELD" else "NOG TE HALEN",
+                                    color = if (achievement.unlocked) Color(0xFF9EE6B4) else CommunityMuted,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
+                                )
+                                if (achievement.unlocked && achievement.unlockedAtMs != null) {
+                                    Text(
+                                        "Behaald op ${formatMatchDate(achievement.unlockedAtMs)}",
+                                        color = CommunityMuted,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
