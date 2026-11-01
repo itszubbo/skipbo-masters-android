@@ -68,3 +68,52 @@ test("match history rejects malformed rows and requires a player uid", () => {
   ]);
   assert.deepEqual(rows, []);
 });
+
+test("achievement catalogue unlocks only when server statistics reach targets", () => {
+  const { getAchievementProgress } = require("../lib/communityRules.js");
+  const progress = getAchievementProgress({
+    wins: 1,
+    matchesPlayed: 12,
+    winStreak: 3,
+    rating: 1499
+  });
+
+  const byId = Object.fromEntries(progress.map(item => [item.id, item]));
+  assert.equal(byId.first_win.unlocked, true);
+  assert.equal(byId.ten_wins.unlocked, false);
+  assert.equal(byId.five_win_streak.unlocked, false);
+  assert.equal(byId.fifty_matches.unlocked, false);
+  assert.equal(byId.hundred_matches.unlocked, false);
+  assert.equal(byId.master_rating.unlocked, false);
+  assert.equal(byId.master_rating.progress, 1499);
+});
+
+test("achievement progress is capped and previously unlocked trophies stay unlocked", () => {
+  const { getAchievementProgress } = require("../lib/communityRules.js");
+  const progress = getAchievementProgress({
+    wins: 20,
+    matchesPlayed: 120,
+    winStreak: 8,
+    rating: 1600
+  }, new Set(["master_rating"]));
+
+  const byId = Object.fromEntries(progress.map(item => [item.id, item]));
+  assert.equal(byId.ten_wins.progress, 10);
+  assert.equal(byId.hundred_matches.progress, 100);
+  assert.equal(byId.five_win_streak.progress, 5);
+  assert.equal(byId.master_rating.unlocked, true);
+  assert.equal(byId.master_rating.progress, 1500);
+});
+
+test("invalid or negative achievement counters never create progress", () => {
+  const { getAchievementProgress } = require("../lib/communityRules.js");
+  const progress = getAchievementProgress({
+    wins: -1,
+    matchesPlayed: Number.NaN,
+    winStreak: -5,
+    rating: 999
+  });
+  assert.ok(progress.every(item => item.progress >= 0));
+  assert.equal(progress.find(item => item.id === "first_win").unlocked, false);
+});
+
