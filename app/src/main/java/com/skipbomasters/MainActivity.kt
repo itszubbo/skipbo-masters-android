@@ -3,6 +3,7 @@ package com.skipbomasters
 import android.os.Bundle
 import android.media.AudioManager
 import android.media.ToneGenerator
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
@@ -331,6 +332,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun SkipBoApp() {
+    val context = LocalContext.current
+    var activeCardTheme by remember { mutableStateOf("classic") }
+    LaunchedEffect(Unit) {
+        activeCardTheme = context.getSharedPreferences("skipbo_masters_profile", android.content.Context.MODE_PRIVATE)
+            .getString("active_card_theme", "classic") ?: "classic"
+    }
     var game by remember { mutableStateOf<Game?>(null) }
     var mode by remember { mutableStateOf(true) }
     var aiDifficulty by remember { mutableStateOf(AiDifficulty.NORMAL) }
@@ -351,13 +358,19 @@ private fun SkipBoApp() {
                         pendingRoomCode = code
                         showCommunity = false
                         showOnline = true
+                    },
+                    onCardThemeChanged = { theme ->
+                        activeCardTheme = theme
+                        context.getSharedPreferences("skipbo_masters_profile", android.content.Context.MODE_PRIVATE)
+                            .edit().putString("active_card_theme", theme).apply()
                     }
                 )
             } else if (g == null && showOnline) {
                 OnlineLobbyScreen(
                     onBack = { showOnline = false; pendingRoomCode = null },
                     initialRoomCode = pendingRoomCode,
-                    onInitialRoomHandled = { pendingRoomCode = null }
+                    onInitialRoomHandled = { pendingRoomCode = null },
+                    activeCardTheme = activeCardTheme
                 )
             } else if (g == null) {
                 Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -396,7 +409,7 @@ private fun SkipBoApp() {
                     Text("Online spelen, vrienden en ranglijst • Firebase-project vereist.", color = Color(0xFFB8CFC3), fontSize = 11.sp)
                 }
             } else {
-                GameScreen(g, onChanged = { revision++ }, onHome = { game = null }, gameRevision = revision)
+                GameScreen(g, onChanged = { revision++ }, onHome = { game = null }, gameRevision = revision, activeCardTheme = activeCardTheme)
             }
         }
     }
@@ -412,7 +425,8 @@ internal fun GameScreen(
     syncMessage: String? = null,
     onOnlinePlay: ((String, Int) -> Unit)? = null,
     onOnlineDiscard: ((Int, Int) -> Unit)? = null,
-    gameRevision: Int = 0
+    gameRevision: Int = 0,
+    activeCardTheme: String = "classic"
 ) {
     // Keep the mutable game engine observable without disposing this composition.
     gameRevision.hashCode()
@@ -467,7 +481,13 @@ internal fun GameScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("TREKSTAPEL", color = Color.White, fontSize = 10.sp)
-                PileCard("🂠", "${g.publicDrawCount ?: g.draw.size} kaarten", Color(0xFFB51F2A), Modifier.width(76.dp))
+                val cardBack = when (activeCardTheme) {
+                    "emerald" -> Triple("✦", Color(0xFF174C35), Color(0xFFFFD34E))
+                    "royal_gold" -> Triple("♛", Color(0xFFFFD34E), Color(0xFF43320C))
+                    "midnight" -> Triple("✧", Color(0xFF282640), Color(0xFFE3D8FF))
+                    else -> Triple("♠", Color(0xFFB51F2A), Color.White)
+                }
+                PileCard(cardBack.first, "${g.publicDrawCount ?: g.draw.size} kaarten", cardBack.second, Modifier.width(76.dp), cardBack.third)
                 Text("Trek tot 5", color = Color.White, fontSize = 10.sp)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
