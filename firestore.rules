@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isRoomMember(roomId) {
+      let room = get(/databases/$(database)/documents/rooms/$(roomId)).data;
+      return signedIn() && (room.hostUid == request.auth.uid || room.guestUid == request.auth.uid);
+    }
+
+    match /rooms/{roomId} {
+      // The six-character invitation code is needed for direct room joining.
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'hostUid', 'hostName', 'guestUid', 'guestName', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.hostName is string
+        && request.resource.data.hostName.size() > 0
+        && request.resource.data.hostName.size() <= 24
+        && request.resource.data.guestUid == null
+        && request.resource.data.guestName == null
+        && request.resource.data.status == 'WAITING';
+
+      allow update: if signedIn()
+        && resource.data.guestUid == null
+        && request.resource.data.guestUid == request.auth.uid
+        && request.resource.data.guestName is string
+        && request.resource.data.guestName.size() > 0
+        && request.resource.data.guestName.size() <= 24
+        && request.resource.data.status == 'READY'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['guestUid', 'guestName', 'status', 'updatedAt']);
+
+      allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
+
+      match /state/{stateId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /privatePlayers/{playerUid} {
+        allow read: if isRoomMember(roomId) && request.auth.uid == playerUid;
+        allow write: if false;
+      }
+      match /serverPlayers/{playerUid} {
+        allow read, write: if false;
+      }
+      match /server/{serverDoc} {
+        allow read, write: if false;
+      }
+      match /privateHands/{playerUid} {
+        allow read, write: if false;
+      }
+    }
+
+    // Personal profile and friend-list documents are read only by their owner.
+    // All writes are made by trusted Cloud Functions using the Admin SDK.
+    match /profiles/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+      match /friends/{friendUid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+
+    // Only public, non-sensitive profile fields are exposed to signed-in players.
+    match /publicProfiles/{uid} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Codes, requests, invitations and ranked results are accessed through
+    // authenticated callable functions, never by direct client writes.
+    match /friendCodes/{code} {
+      allow read, write: if false;
+    }
+    match /friendRequests/{requestId} {
+      allow read, write: if false;
+    }
+    match /gameInvites/{inviteId} {
+      allow read, write: if false;
+    }
+    match /leaderboard/{uid} {
+      allow read, write: if false;
+    }
+    match /matchResults/{matchId} {
+      allow read, write: if false;
+    }
+  }
+}
