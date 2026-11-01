@@ -4,7 +4,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { eloWinnerDelta, preserveStoredDisplayName } from "./communityRules";
+import { buildPlayerMatchHistory, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
@@ -778,3 +778,49 @@ export const getLeaderboardPage = onCall(async (request) => {
     nextCursor: hasMore && last ? { rating: Number(last.get("rating")), uid: String(last.get("uid")) } : null,
   };
 });
+
+/** Return only the signed-in player's recent, server-recorded online matches. */
+export const getMyMatchHistory = onCall(async (request) => {
+  const uid = requireUid(request);
+  const requestedSize = request.data?.pageSize;
+  const pageSize = Number.isInteger(requestedSize)
+    ? Math.min(30, Math.max(1, Number(requestedSize)))
+    : 20;
+
+  // Keep the two indexed queries scoped to the authenticated player's UID.
+  const [wonSnapshot, lostSnapshot] = await Promise.all([
+    db.collection("matchResults")
+      .where("winnerUid", "==", uid)
+      .orderBy("createdAt", "desc")
+      .limit(pageSize)
+      .get(),
+    db.collection("matchResults")
+      .where("loserUid", "==", uid)
+      .orderBy("createdAt", "desc")
+      .limit(pageSize)
+      .get(),
+  ]);
+
+  const records: MatchHistoryRecord[] = [...wonSnapshot.docs, ...lostSnapshot.docs]
+    .map((doc) => {
+      const data = doc.data();
+      const createdAt = data.createdAt as { toMillis?: () => number } | undefined;
+      const playedAtMs = createdAt && typeof createdAt.toMillis === "function"
+        ? createdAt.toMillis()
+        : 0;
+
+      return {
+        matchId: String(data.matchId ?? doc.id),
+        winnerUid: String(data.winnerUid ?? ""),
+        loserUid: String(data.loserUid ?? ""),
+        winnerName: cleanDisplayName(data.winnerName),
+        loserName: cleanDisplayName(data.loserName),
+        ratingChange: Number(data.ratingChange),
+        playedAtMs,
+      };
+    });
+
+  const matches = buildPlayerMatchHistory(uid, records).slice(0, pageSize);
+  return { matches };
+});
+
