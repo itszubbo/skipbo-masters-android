@@ -621,3 +621,11 @@ Er zijn geen nieuwe samengestelde Firestore-indexen of Storage-regels nodig.
 - Met één tik wordt via de bestaande beveiligde vriendenuitnodiging een nieuwe privékamer aangemaakt en de tegenstander uitgenodigd.
 - De kamer opent direct voor de uitnodigende speler; de tegenstander kan de uitnodiging via de community accepteren.
 - De server geeft alleen de UID van de tegenstander terug bij eigen wedstrijdresultaten. Uitnodigen blijft server-side beperkt tot wederzijdse vrienden.
+
+
+## v25 — persoonlijke winreeksen en records
+- Spelersprofielen tonen nu de huidige opeenvolgende online overwinningen en het persoonlijke record.
+- Vriendenkaarten tonen eveneens hun actuele reeks en beste reeks.
+- De huidige en beste reeks worden server-side bijgewerkt in dezelfde transactie als de bevestigde wedstrijd en de profielstatistieken.
+- Verliezen zetten de actuele reeks terug op nul, maar laten het persoonlijke record intact.
+- Bestaande profielen krijgen hun oude huidige winreeks als startwaarde voor het persoonlijke record wanneer dat record nog niet eerder werd bijgehouden.
