@@ -33,6 +33,8 @@ internal data class CommunityPlayer(
     val wins: Int = 0,
     val losses: Int = 0,
     val matchesPlayed: Int = 0,
+    val winStreak: Int = 0,
+    val bestWinStreak: Int = 0,
     val provisional: Boolean = false
 )
 
@@ -631,6 +633,8 @@ internal object FirebaseCommunity {
             wins = map.int("wins"),
             losses = map.int("losses"),
             matchesPlayed = map.int("matchesPlayed"),
+            winStreak = map.int("winStreak"),
+            bestWinStreak = map.int("bestWinStreak", map.int("winStreak")),
             provisional = map["provisional"] as? Boolean ?: false
         )
     }
