@@ -614,3 +614,10 @@ Er zijn geen nieuwe samengestelde Firestore-indexen of Storage-regels nodig.
 - Ranglijstregels worden samen met het wedstrijdresultaat en de seizoensvoortgang in één Firestore-transactie bijgewerkt.
 - De ranglijst toont de top 25 in de seizoensgegevens; de app presenteert de top 10. De eigen positie wordt afzonderlijk berekend, ook buiten de top 25.
 - De ranglijst gebruikt alleen online resultaten. Lokale AI- en pass-and-play-wedstrijden tellen niet mee.
+
+
+## v24 — directe revanche vanuit wedstrijdgeschiedenis
+- Wedstrijdgeschiedenis toont een knop **Revanche** bij eerdere tegenstanders die op dit moment ook bevriend zijn.
+- Met één tik wordt via de bestaande beveiligde vriendenuitnodiging een nieuwe privékamer aangemaakt en de tegenstander uitgenodigd.
+- De kamer opent direct voor de uitnodigende speler; de tegenstander kan de uitnodiging via de community accepteren.
+- De server geeft alleen de UID van de tegenstander terug bij eigen wedstrijdresultaten. Uitnodigen blijft server-side beperkt tot wederzijdse vrienden.
