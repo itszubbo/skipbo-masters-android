@@ -5,7 +5,7 @@ import { FieldValue, getFirestore, type DocumentData, type DocumentReference, ty
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { drawToFive, setAsideCompletedBuild, shuffleCards } from "./gameRules";
-import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked, updateSeasonProgress, seasonRankScore, isValidAchievementBadgeId } from "./communityRules";
+import { buildPlayerMatchHistory, buildTournamentBracket, getAchievementProgress, getDailyMissionProgress, getLevelProgress, nextDailyStreak, updateDailyMissionProgress, eloWinnerDelta, preserveStoredDisplayName, type MatchHistoryRecord, isCardThemeUnlocked, updateSeasonProgress, seasonRankScore, updateBestWinStreak, isValidAchievementBadgeId } from "./communityRules";
 
 initializeApp();
 setGlobalOptions({ region: "europe-west1", maxInstances: 20 });
