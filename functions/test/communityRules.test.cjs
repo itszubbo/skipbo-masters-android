@@ -45,9 +45,11 @@ test("match history is scoped to the requested player and signs Elo changes", ()
   ]);
 
   assert.deepEqual(rows.map(row => row.matchId), ["newer-loss", "older-win"]);
+  assert.equal(rows[0].opponentUid, "player-c");
   assert.equal(rows[0].opponentName, "C");
   assert.equal(rows[0].won, false);
   assert.equal(rows[0].ratingChange, -12);
+  assert.equal(rows[1].opponentUid, "player-b");
   assert.equal(rows[1].opponentName, "B");
   assert.equal(rows[1].won, true);
   assert.equal(rows[1].ratingChange, 18);
