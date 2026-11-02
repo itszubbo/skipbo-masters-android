@@ -54,6 +54,7 @@ internal data class CommunityOverview(
 
 internal data class MatchHistoryItem(
     val matchId: String,
+    val opponentUid: String,
     val opponentName: String,
     val won: Boolean,
     val ratingChange: Int,
@@ -351,6 +352,7 @@ internal object FirebaseCommunity {
                     val map = item.asMap()
                     MatchHistoryItem(
                         matchId = map.string("matchId"),
+                        opponentUid = map.string("opponentUid"),
                         opponentName = map.string("opponentName", "Speler"),
                         won = map["won"] as? Boolean ?: false,
                         ratingChange = map.int("ratingChange"),
