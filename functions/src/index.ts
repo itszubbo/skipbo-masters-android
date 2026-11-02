@@ -983,6 +983,8 @@ export const getCommunityOverview = onCall(async (request) => {
       wins: Number(data.wins ?? 0),
       losses: Number(data.losses ?? 0),
       matchesPlayed: Number(data.matchesPlayed ?? 0),
+      winStreak: Math.max(0, Number(data.winStreak ?? 0)),
+      bestWinStreak: Math.max(0, Number(data.bestWinStreak ?? data.winStreak ?? 0)),
       activeBadgeId: typeof data.activeBadgeId === "string" ? data.activeBadgeId : null,
     };
   };
