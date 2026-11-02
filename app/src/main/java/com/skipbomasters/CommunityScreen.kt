@@ -826,12 +826,35 @@ internal fun CommunityScreen(
                                 match.ratingChange < 0 -> "−${kotlin.math.abs(match.ratingChange)}"
                                 else -> "0"
                             }
-                            Text(
-                                "$pointLabel punten",
-                                color = if (match.ratingChange >= 0) CommunityGold else Color(0xFFFFA8A8),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
+                            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "$pointLabel punten",
+                                    color = if (match.ratingChange >= 0) CommunityGold else Color(0xFFFFA8A8),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                val canRematch = overview?.friends?.any { it.uid == match.opponentUid } == true
+                                if (canRematch) {
+                                    OutlinedButton(
+                                        enabled = !loading,
+                                        onClick = {
+                                            loading = true
+                                            error = ""
+                                            FirebaseCommunity.createGameInvite(context, match.opponentUid) { result ->
+                                                loading = false
+                                                result.onSuccess { code ->
+                                                    FirebaseRooms.saveLastRoomSession(context, code, displayName)
+                                                    notice = "Revanche-uitnodiging verstuurd naar ${match.opponentName}."
+                                                    onOpenRoom(code)
+                                                }.onFailure {
+                                                    error = it.localizedMessage ?: "Revanche-uitnodiging kon niet worden verstuurd."
+                                                }
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) { Text("Revanche", fontSize = 10.sp) }
+                                }
+                            }
                         }
                     }
                 }
