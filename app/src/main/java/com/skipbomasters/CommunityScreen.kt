@@ -510,6 +510,12 @@ internal fun CommunityScreen(
                         data.profile.wins * 100 / data.profile.matchesPlayed
                     } else 0
                     Text("Winstpercentage: $winRate%", color = CommunityMuted, fontSize = 11.sp)
+                    Text(
+                        "Huidige winreeks: ${data.profile.winStreak} • Persoonlijk record: ${data.profile.bestWinStreak}",
+                        color = if (data.profile.winStreak > 0) Color(0xFF9EE6B4) else CommunityMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text("Niveau ${data.profile.level} • ${data.profile.xp} XP", color = CommunityGold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     data.profile.activeBadgeId?.let { badgeId ->
                         Text("🏅 Badge: ${badgeName(badgeId)}", color = Color(0xFFFFE29A), fontWeight = FontWeight.Bold, fontSize = 10.sp)
@@ -692,6 +698,11 @@ internal fun CommunityScreen(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(friend.displayName, color = Color.White, fontWeight = FontWeight.SemiBold)
                                 Text("${friend.rating} punten • ${friend.wins} overwinningen", color = CommunityMuted, fontSize = 10.sp)
+                                Text(
+                                    "Winreeks ${friend.winStreak} • record ${friend.bestWinStreak}",
+                                    color = CommunityMuted,
+                                    fontSize = 9.sp
+                                )
                             }
                             OutlinedButton(enabled = !loading, onClick = {
                                 loading = true
