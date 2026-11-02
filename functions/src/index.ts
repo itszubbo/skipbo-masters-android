@@ -794,6 +794,8 @@ export const ensureFriendCode = onCall(async (request) => {
         wins: Number(profile.wins ?? 0),
         losses: Number(profile.losses ?? 0),
         matchesPlayed: Number(profile.matchesPlayed ?? 0),
+        winStreak: Math.max(0, Number(profile.winStreak ?? 0)),
+        bestWinStreak: Math.max(0, Number(profile.bestWinStreak ?? profile.winStreak ?? 0)),
         level: getLevelProgress(Number(profile.xp ?? 0)).level,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
