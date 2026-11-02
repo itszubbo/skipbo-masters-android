@@ -287,3 +287,20 @@ test("monthly season rank score rejects invalid counters and unsafe values", () 
   assert.throws(() => seasonRankScore(1, 1.5));
   assert.throws(() => seasonRankScore(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER));
 });
+
+
+test("personal-best win streak never decreases and follows the new current streak", () => {
+  const { updateBestWinStreak } = require("../lib/communityRules.js");
+  assert.equal(updateBestWinStreak(4, 5), 5);
+  assert.equal(updateBestWinStreak(7, 2), 7);
+  assert.equal(updateBestWinStreak(null, 3), 3);
+  assert.equal(updateBestWinStreak(6, 0), 6);
+});
+
+test("personal-best win streak sanitizes malformed counters", () => {
+  const { updateBestWinStreak } = require("../lib/communityRules.js");
+  assert.equal(updateBestWinStreak(-4, 2), 2);
+  assert.equal(updateBestWinStreak(3.5, 2), 2);
+  assert.equal(updateBestWinStreak(Number.NaN, Number.NaN), 0);
+  assert.equal(updateBestWinStreak(Number.MAX_SAFE_INTEGER + 1, 1), 1);
+});
