@@ -405,6 +405,16 @@ export function seasonRankScore(wins: number, matchesPlayed: number): number {
   return score;
 }
 
+
+/** Keep a player's personal best win streak without trusting malformed counters. */
+export function updateBestWinStreak(previousBest: unknown, currentStreak: unknown): number {
+  const best = Number(previousBest ?? 0);
+  const current = Number(currentStreak ?? 0);
+  const safeBest = Number.isSafeInteger(best) && best >= 0 ? best : 0;
+  const safeCurrent = Number.isSafeInteger(current) && current >= 0 ? current : 0;
+  return Math.max(safeBest, safeCurrent);
+}
+
 export function isValidAchievementBadgeId(value: string): boolean {
   return /^[a-z0-9_]{1,40}$/.test(value);
 }
