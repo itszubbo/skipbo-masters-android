@@ -130,7 +130,7 @@ const cleanDisplayName = (value: unknown, fallback = "Skip-Bo speler") => {
 const friendRequestId = (a: string, b: string) =>
   createHash("sha256").update([a, b].sort().join(":")).digest("hex");
 const initialProfile = (uid: string, displayName: string) => ({
-  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, xp: 0, unlockedCosmetics: [], activeCardTheme: "classic", activeBadgeId: null,
+  uid, displayName, rating: 1000, wins: 0, losses: 0, matchesPlayed: 0, winStreak: 0, bestWinStreak: 0, xp: 0, unlockedCosmetics: [], activeCardTheme: "classic", activeBadgeId: null,
   createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
 });
 
@@ -360,7 +360,16 @@ export const submitOnlineMove = onCall(async (request) => {
         const winnerWinStreak = Number.isSafeInteger(previousWinnerStreak) && previousWinnerStreak >= 0
           ? previousWinnerStreak + 1
           : 1;
+        const previousLoserStreak = Number(loserData.winStreak ?? 0);
         const loserWinStreak = 0;
+        const winnerBestWinStreak = updateBestWinStreak(
+          winnerData.bestWinStreak ?? previousWinnerStreak,
+          winnerWinStreak
+        );
+        const loserBestWinStreak = updateBestWinStreak(
+          loserData.bestWinStreak ?? previousLoserStreak,
+          loserWinStreak
+        );
 
         // Daily missions progress only from server-confirmed match results.
         const winnerDailyUpdate = updateDailyMissionProgress(winnerDailySnap.data() ?? {}, true);
@@ -491,6 +500,7 @@ export const submitOnlineMove = onCall(async (request) => {
           ...initialProfile(winnerUid, winnerName), ...winnerData,
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
           wins: winnerWins, matchesPlayed: winnerMatches, winStreak: winnerWinStreak,
+          bestWinStreak: winnerBestWinStreak,
           xp: winnerXpAfter,
           unlockedCosmetics: winnerUnlockedCosmetics,
           updatedAt: FieldValue.serverTimestamp(),
@@ -499,6 +509,7 @@ export const submitOnlineMove = onCall(async (request) => {
           ...initialProfile(loserUid, loserName), ...loserData,
           uid: loserUid, displayName: loserName, rating: newLoserRating,
           losses: loserLosses, matchesPlayed: loserMatches, winStreak: loserWinStreak,
+          bestWinStreak: loserBestWinStreak,
           xp: loserXpAfter,
           unlockedCosmetics: loserUnlockedCosmetics,
           updatedAt: FieldValue.serverTimestamp(),
@@ -506,12 +517,14 @@ export const submitOnlineMove = onCall(async (request) => {
         transaction.set(winnerPublicRef, {
           uid: winnerUid, displayName: winnerName, rating: newWinnerRating,
           wins: winnerWins, losses: Number(winnerData.losses ?? 0), matchesPlayed: winnerMatches,
+          winStreak: winnerWinStreak, bestWinStreak: winnerBestWinStreak,
           level: winnerLevel,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(loserPublicRef, {
           uid: loserUid, displayName: loserName, rating: newLoserRating,
           wins: Number(loserData.wins ?? 0), losses: loserLosses, matchesPlayed: loserMatches,
+          winStreak: loserWinStreak, bestWinStreak: loserBestWinStreak,
           level: loserLevel,
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
@@ -979,6 +992,8 @@ export const getCommunityOverview = onCall(async (request) => {
       uid, displayName: cleanDisplayName(me.displayName), friendCode: String(me.friendCode ?? ""),
       rating: Number(me.rating ?? 1000), wins: Number(me.wins ?? 0), losses: Number(me.losses ?? 0),
       matchesPlayed: Number(me.matchesPlayed ?? 0),
+      winStreak: Math.max(0, Number(me.winStreak ?? 0)),
+      bestWinStreak: Math.max(0, Number(me.bestWinStreak ?? me.winStreak ?? 0)),
       activeBadgeId: typeof me.activeBadgeId === "string" ? me.activeBadgeId : null,
       xp: Number(me.xp ?? 0),
       level: getLevelProgress(Number(me.xp ?? 0)).level,
