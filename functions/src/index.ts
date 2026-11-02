@@ -785,6 +785,7 @@ export const ensureFriendCode = onCall(async (request) => {
         uid,
         displayName: effectiveName,
         friendCode: selectedCode,
+        bestWinStreak: updateBestWinStreak(oldData.bestWinStreak, oldData.winStreak),
         updatedAt: FieldValue.serverTimestamp(),
       };
       transaction.set(profileRef, profile, { merge: true });
