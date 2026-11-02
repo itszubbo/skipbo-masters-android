@@ -32,6 +32,7 @@ export type MatchHistoryRecord = {
 
 export type PlayerMatchHistoryItem = {
   matchId: string;
+  opponentUid: string;
   opponentName: string;
   won: boolean;
   ratingChange: number;
@@ -58,6 +59,7 @@ export function buildPlayerMatchHistory(
       const won = record.winnerUid === uid;
       return {
         matchId: record.matchId,
+        opponentUid: won ? record.loserUid : record.winnerUid,
         opponentName: won ? record.loserName : record.winnerName,
         won,
         ratingChange: won ? record.ratingChange : -record.ratingChange,
